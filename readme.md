@@ -47,6 +47,7 @@ this performance is under 0.45 threshold
 - Streamlit
 - Joblib
 - Pandas / NumPy
+- data set ( transaction.csv) - link: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud/data?select=creditcard.csv 
 
 ---
 
