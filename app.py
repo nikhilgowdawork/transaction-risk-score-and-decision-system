@@ -9,8 +9,6 @@ if "page" not in st.session_state :
 if "transaction" not in st.session_state:
  st.session_state["transaction"] = None
 
-
-
 if "transaction_scaled" not in st.session_state:
  st.session_state["transaction_scaled"] = None
 
@@ -42,18 +40,18 @@ if st.session_state.page == 1:
  st.info("Model: XGBoost | Imbalance handled using SMOTE | "
     "Custom decision threshold enabled | Real-time risk simulation")
 
- 
+ #takes the transaction index as input 
  if "index" not in st.session_state:
   st.session_state.index =0
 
-#select transaction
- index = st.number_input(
+ #select transaction
+ st.session_state.index = st.number_input(
     "Select Transaction Index",
     min_value=0,
     max_value =len(df)-1,
     step=1,
     value=st.session_state.index
-)
+ )
  
  threshold = st.slider(
    "Risk Threshold",
@@ -62,30 +60,29 @@ if st.session_state.page == 1:
    value=0.45,
    step=0.1
   )
- 
- st.session_state.index= index
 
  if st.button("Analyse",type="primary"):
   
-  transaction= X.iloc[index:index+1]
+   transaction= X.iloc[st.session_state.index:st.session_state.index+1]
   #scale
-  transaction_scaled = scaler.transform(transaction)
+   transaction_scaled = scaler.transform(transaction)
 
   #predict 
-  prob= model.predict_proba(transaction_scaled)[0][1]
+   prob= model.predict_proba(transaction_scaled)[0][1]
 
-  prediction = "FRAUD ❌ " if prob >= threshold else "SAFE ✅" 
+   prediction = "FRAUD ❌ " if prob >= threshold else "SAFE ✅" 
   
-  st.session_state["transaction"] =transaction
-  st.session_state["transaction_scaled"] = transaction_scaled
-  st.session_state["prob"]= prob
-  st.session_state["prediction"]=prediction
+   st.session_state["transaction"] =transaction
+   st.session_state["transaction_scaled"] = transaction_scaled
+   st.session_state["prob"]= prob
+   st.session_state["prediction"]=prediction
   
-  st.session_state.page =2
-  st.rerun()
+   st.session_state.page =2
+   st.rerun()
+ 
  
  #OUTPUT
-elif st.session_state.page == 2:
+elif st.session_state.page == 2:  
   
  st.title("Prediction Result")
 
@@ -110,6 +107,7 @@ elif st.session_state.page == 2:
  if st.button("back"):
   st.session_state.page = 1
   st.rerun()
+  
   
 
 
