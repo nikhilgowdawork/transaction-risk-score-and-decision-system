@@ -54,6 +54,15 @@ if st.session_state.page == 1:
     step=1,
     value=st.session_state.index
 )
+ 
+ threshold = st.slider(
+   "Risk Threshold",
+   min_value=0.0,
+   max_value=1.0,
+   value=0.45,
+   step=0.1
+  )
+ 
  st.session_state.index= index
 
  if st.button("Analyse",type="primary"):
@@ -65,15 +74,6 @@ if st.session_state.page == 1:
   #predict 
   prob= model.predict_proba(transaction_scaled)[0][1]
 
-  
-
-  threshold = st.slider(
-   "Risk Threshold",
-   min_value=0.0,
-   max_value=1.0,
-   value=0.45,
-   step=0.1
-  )
   prediction = "FRAUD ❌ " if prob >= threshold else "SAFE ✅" 
   
   st.session_state["transaction"] =transaction
