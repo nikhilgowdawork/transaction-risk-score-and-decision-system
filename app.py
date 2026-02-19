@@ -2,7 +2,8 @@ import streamlit as st
 import numpy as np 
 import pandas as pd
 import joblib
- 
+
+# initializing the tokens 
 if "page" not in st.session_state :
  st.session_state.page = 1
 
@@ -24,6 +25,7 @@ if "prediction" not in st.session_state:
 model = joblib.load("model.pkl")
 scaler = joblib.load("scaler.pkl")
 
+#page configuration
 st.set_page_config(
  page_title ="CCFD",
  page_icon="💳",
@@ -34,7 +36,7 @@ df = pd.read_csv("transactiondata.csv")
 #remove label
 X = df.drop("Class",axis=1) 
 
-
+# UI for page one - takes input
 if st.session_state.page == 1:
  st.title("TRANSACTION ANALYSIS AND DECISION 💳") 
  st.info("Model: XGBoost | Imbalance handled using SMOTE | "
@@ -52,7 +54,7 @@ if st.session_state.page == 1:
     step=1,
     value=st.session_state.index
  )
- 
+ #Custom threshold for users to adjust accodring to the requirement
  threshold = st.slider(
    "Risk Threshold",
    min_value=0.0,
