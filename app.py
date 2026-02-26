@@ -65,6 +65,7 @@ if st.session_state.page == 1:
   #predict 
    prob= model.predict_proba(transaction_scaled)[0][1]
 
+   threshold = 0.6
    prediction = "FRAUD ❌ " if prob >= threshold else "SAFE ✅" 
   
    st.session_state["transaction"] =transaction
