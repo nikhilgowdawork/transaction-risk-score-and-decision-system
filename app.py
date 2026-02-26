@@ -54,14 +54,7 @@ if st.session_state.page == 1:
     step=1,
     value=st.session_state.index
  )
- #Custom threshold for users to adjust accodring to the requirement
- threshold = st.slider(
-   "Risk Threshold",
-   min_value=0.0,
-   max_value=1.0,
-   value=0.45,
-   step=0.1
-  )
+ 
 
  if st.button("Analyse",type="primary"):
   

@@ -10,10 +10,15 @@ from imblearn.over_sampling import SMOTE
 from sklearn.metrics import precision_score,recall_score, f1_score, roc_auc_score ,roc_curve
 import joblib 
 from xgboost import XGBClassifier
+import os
 
 
 #load the data using pandas.
-df = pd.read_csv("transactiondata.csv")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+data_path=os.path.join(BASE_DIR,"data","transactiondata.csv")
+
+df = pd.read_csv(data_path)
 
 #seperate the input and out put to teach the mpdel 
 #x = other than class,y = class
@@ -52,7 +57,7 @@ model.fit(x_train_smote,y_train_smote)
 y_pred = model.predict(x_test_scaled)
 
 y_prob = model.predict_proba(x_test_scaled)[:,1]
-threshold = 0.45
+threshold = 0.6
 y_pred_custom = (y_prob >= threshold).astype(int)
 
 print("XGBOOST + SMOTE")
@@ -66,7 +71,7 @@ print("F1_score:", round(f1_score(y_test, y_pred_custom),2))
 
 
 # To Save The Trained Model
-joblib.dump(model,"model.pkl") 
+joblib.dump(model,"xgb_model.pkl") 
 joblib.dump(scaler,"scaler.pkl")
 
 
