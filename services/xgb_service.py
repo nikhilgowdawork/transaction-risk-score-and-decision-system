@@ -17,9 +17,6 @@ scaler_path = os.path.join(BASE_DIR,"models","scaler.pkl")
 model = joblib.load(model_path)
 scaler = joblib.load(scaler_path)
 
-print(model_path, os.path.exists(model_path))
-print(scaler_path, os.path.exists(scaler_path))
-
 
 df = pd.read_csv(data_path)
 #Seperate the data
@@ -33,10 +30,8 @@ x_train,x_test,y_train,y_test=train_test_split(
         x,y,test_size=0.2,random_state=42,stratify=y
 
         )
-
-    #to scale AMOUNT and TIME values acc to other values 
-scaler= StandardScaler()
-x_test_scaled= scaler.fit_transform(x_test)
+# You have already scaled the data , just use it
+x_test_scaled= scaler.transform(x_test)
 
 y_pred = model.predict(x_test_scaled)
 
