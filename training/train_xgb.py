@@ -20,8 +20,8 @@ data_path=os.path.join(BASE_DIR,"data","transactiondata.csv")
 
 df = pd.read_csv(data_path)
 
-    #seperate the input and out put to teach the mpdel 
-    #x = other than class,y = class
+#seperate the input and out put to teach the model 
+# x = other than class,y = class
 
 x=df.drop("Class",axis=1) #Contains all columns exculding Class -- time,amount,v1-v28
 y=df["Class"] #contains Class column only - this will be predictd by the model
@@ -55,24 +55,12 @@ model = XGBClassifier(
     )
 model.fit(x_train_smote,y_train_smote)
 
-y_pred = model.predict(x_test_scaled)
 
-y_prob = model.predict_proba(x_test_scaled)[:,1]
-threshold = 0.6
-y_pred_custom = (y_prob >= threshold).astype(int)
-
-    # To Save The Trained Model
+# To Save The Trained Model
 joblib.dump(model,"xgb_model.pkl") 
 joblib.dump(scaler,"scaler.pkl")
 
 
-print("XGBOOST + SMOTE")
-print("CONFUSION MATRIX:")
-print(confusion_matrix(y_test, y_pred_custom))
-print("RECALL:", round(recall_score(y_test, y_pred_custom),2))
-print("PRECISION:", precision_score(y_test, y_pred_custom))
-print("ROC_AUC:", round(roc_auc_score(y_test, y_prob),2))
-print("F1_score:", round(f1_score(y_test, y_pred_custom),2))
 
 
 
