@@ -13,52 +13,58 @@ from xgboost import XGBClassifier
 import os
 
 
-#load the data using pandas.
+    #load the data using pandas.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 data_path=os.path.join(BASE_DIR,"data","transactiondata.csv")
 
 df = pd.read_csv(data_path)
 
-#seperate the input and out put to teach the mpdel 
-#x = other than class,y = class
+    #seperate the input and out put to teach the mpdel 
+    #x = other than class,y = class
 
-x=df.drop("Class",axis=1)
-y=df["Class"]
+x=df.drop("Class",axis=1) #Contains all columns exculding Class -- time,amount,v1-v28
+y=df["Class"] #contains Class column only - this will be predictd by the model
 
 x_train,x_test,y_train,y_test=train_test_split(
-    x,y,test_size=0.2,random_state=42,stratify=y
+        x,y,test_size=0.2,random_state=42,stratify=y
 
-    )
+        )
 
-#to scale AMOUNT and TIME values acc to other values 
+    #to scale AMOUNT and TIME values acc to other values 
 scaler= StandardScaler()
 x_train_scaled= scaler.fit_transform(x_train)
 x_test_scaled = scaler.transform(x_test)
 
 
-#introducing SMOTE to handle imabalanced data 
+    #introducing SMOTE to handle imabalanced data 
 smote = SMOTE(random_state = 42)
 x_train_smote,y_train_smote = smote.fit_resample(x_train_scaled,y_train)
 
-#FRAUD DETECT THROGH XGBOOST
+    #FRAUD DETECT THROGH XGBOOST
 model = XGBClassifier(
-    n_estimators=300,
-    max_depth=6,
-    learning_rate=0.1,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    scale_pos_weight=1,   # SMOTE already handled imbalance
-    eval_metric="logloss",
-    random_state=42
-  
-)
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=1,   # SMOTE already handled imbalance
+        eval_metric="logloss",
+        random_state=42
+    
+    )
 model.fit(x_train_smote,y_train_smote)
+
 y_pred = model.predict(x_test_scaled)
 
 y_prob = model.predict_proba(x_test_scaled)[:,1]
 threshold = 0.6
 y_pred_custom = (y_prob >= threshold).astype(int)
+
+    # To Save The Trained Model
+joblib.dump(model,"xgb_model.pkl") 
+joblib.dump(scaler,"scaler.pkl")
+
 
 print("XGBOOST + SMOTE")
 print("CONFUSION MATRIX:")
@@ -68,11 +74,6 @@ print("PRECISION:", precision_score(y_test, y_pred_custom))
 print("ROC_AUC:", round(roc_auc_score(y_test, y_prob),2))
 print("F1_score:", round(f1_score(y_test, y_pred_custom),2))
 
-
-
-# To Save The Trained Model
-joblib.dump(model,"xgb_model.pkl") 
-joblib.dump(scaler,"scaler.pkl")
 
 
 
