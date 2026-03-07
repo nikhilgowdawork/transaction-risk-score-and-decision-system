@@ -2,6 +2,7 @@
 import os
 import joblib
 from tensorflow.keras.models import load_model # type: ignore
+import numpy as np
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,5 +24,14 @@ threshold = joblib.load(threshold_path)
 
 def AutoencoderCome(transaction):
     transaction_scaled = scaler.transform(transaction)
-    
+
     reconstruction = autoencoder.predict(transaction_scaled)
+
+    error = np.mean(np.square(transaction_scaled - reconstruction),axis=1)
+
+    decision = (error > threshold).astype(int)
+
+    return error , decision
+
+    
+

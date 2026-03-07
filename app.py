@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np 
 import pandas as pd
 import joblib
+import os
 
 # initializing the tokens 
 if "page" not in st.session_state :
@@ -19,11 +20,18 @@ if "prob" not in st.session_state:
 if "prediction" not in st.session_state:
  st.session_state["prediction"]=""
 
+if "error" not in st.session_state:
+ st.session_state["error"] = 0.0
+
+if "risk_score" not in st.session_state:
+ st.session_state["risk_score"] = 0.0
 
 
-#load trained data or scaler 
-model = joblib.load("model.pkl")
-scaler = joblib.load("scaler.pkl")
+
+#LOAD THE FUNCTIONS TO GENERATE OUTPUT
+from services.xgb_service import XGBoostcome
+from services.autoencoder_service import AutoencoderCome
+from services.decision_service import get_final_decision
 
 #page configuration
 st.set_page_config(
@@ -31,8 +39,13 @@ st.set_page_config(
  page_icon="💳",
  layout="wide"
 )
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+data_path=os.path.join(BASE_DIR,"data","transactiondata.csv")
+
 #load dataset
-df = pd.read_csv("transactiondata.csv")
+df = pd.read_csv(data_path)
 #remove label
 X = df.drop("Class",axis=1) 
 
@@ -59,19 +72,21 @@ if st.session_state.page == 1:
  if st.button("Analyse",type="primary"):
   
    transaction= X.iloc[st.session_state.index:st.session_state.index+1]
-  #scale
-   transaction_scaled = scaler.transform(transaction)
+   # XGBOOST FUNCTION CALL
+   prob, xgb_decision = XGBoostcome(transaction)  
+   # AUTO ENCODER FUNCTION CALL
+   error, AE_decision = AutoencoderCome(transaction)
 
-  #predict 
-   prob= model.predict_proba(transaction_scaled)[0][1]
+   # COMBINE SCORES
+   risk_score = (0.7 * prob) + (0.3 * error)
 
-   threshold = 0.6
-   prediction = "FRAUD ❌ " if prob >= threshold else "SAFE ✅" 
-  
+   final_prediction = get_final_decision(risk_score)
+
    st.session_state["transaction"] =transaction
-   st.session_state["transaction_scaled"] = transaction_scaled
    st.session_state["prob"]= prob
-   st.session_state["prediction"]=prediction
+   st.session_state["final_prediction"]=final_prediction
+   st.session_state["risk_score"] = risk_score
+   st.session_state["error"] =  error
   
    st.session_state.page =2
    st.rerun()
@@ -82,19 +97,27 @@ elif st.session_state.page == 2:
   
  st.title("Prediction Result")
 
- col1,col2 = st.columns(2)
+ col1,col2,col3 = st.columns(3)
  with col1:
   st.metric(
-    label="Fraud Probability",
-    value= f"{st.session_state["prob"]*100:.2f}%",
+    label="Fraud Probability (XGboost)",
+    value= f"{float(st.session_state['prob'])*100:.4f}%"
  )
  with col2:
   st.metric(
-   label="Decision",
-   value= f"{st.session_state["prediction"]}"
+   label="Anomaly Score (Auto encoder)",
+   value= f"{float(st.session_state['error']):.4f}"
    )
+ with col3:
+  st.metric(
+   label="Final Risk Score",
+   value=f"{float(st.session_state['risk_score']):.2f}"
+  )
+
+ st.subheader(f"Final Decision: {st.session_state['final_prediction']}")
+
  st.write(f"**Risk Meter-**")
- st.progress(float(st.session_state["prob"]))
+ st.progress(float(st.session_state["risk_score"]))
 
  #show raw data
  st.title("Transaction Details")  

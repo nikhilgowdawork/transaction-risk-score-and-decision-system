@@ -59,4 +59,4 @@ print("confusion_matirx:",confusion_matrix(y,y_pred))
 print("classification_report:",classification_report(y,y_pred))
 
 
-joblib.dump(threshold,"models/AE_thrreshold.pkl")
+joblib.dump(threshold,"models/AE_threshold.pkl")
