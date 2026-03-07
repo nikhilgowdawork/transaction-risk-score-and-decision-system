@@ -4,8 +4,9 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
-from tensorflow.keras import layers,models
+from tensorflow.keras import layers,models # type: ignore
 from sklearn.metrics import classification_report,confusion_matrix,roc_curve
+import joblib
 import random
 
 
@@ -39,7 +40,7 @@ x_train,x_val = train_test_split(x_normal, test_size = 0.2 , random_state = 42)
 input_dim = x_train.shape[1] # Shape[1] means we are givein gall the 30 columns ( time, amount and v1-v28)...
 
 # Build AutoEncoder
-model = models.Sequential([
+autoencoder= models.Sequential([
     layers.Input(shape=(input_dim,)),
     layers.Dense(16,activation="relu"),
     layers.Dense(8,activation="relu"),
@@ -47,13 +48,13 @@ model = models.Sequential([
     layers.Dense(input_dim,activation="linear")
 ])
 
-model.compile(
+autoencoder.compile(
     optimizer= "adam",
     loss = "mse"
 )
 
 #train
-history = model.fit(
+history = autoencoder.fit(
     x_train,x_train,
     epochs = 20,
     batch_size = 256,
@@ -61,29 +62,6 @@ history = model.fit(
     shuffle = True
 
 )
-x_pred = model.predict(x_scaled)
-reconstruction_error = np.mean(np.square(x_scaled - x_pred),axis=1)
-df["anomaly_score"] = reconstruction_error
 
-
-
-print("Normal mean errror:",
-      df[df["Class"] == 0]["anomaly_score"].mean())
-
-print("fraud mean error:",
-      df[df["Class"] == 1]["anomaly_score"].mean())
-
-# creating the threshold by ROC-curve , Anythin gbeyond the threshold is anomaly
-fpr ,tpr, thresholds = roc_curve(y,reconstruction_error)
-threshold = thresholds[np.argmax(tpr - fpr)]
-print("threshold:",threshold)
-
-
-# convert the score to prediction
-df["ae_prediction"] = (df["anomaly_score"] > threshold).astype(int)
-y_pred = df["ae_prediction"]
-
-
-
-print("confusion_matirx:",confusion_matrix(y,y_pred))
-print("classification_report:",classification_report(y,y_pred))
+autoencoder.save("autoencoder_model.keras")
+joblib.dump(scaler,"AEscaler.pkl")
