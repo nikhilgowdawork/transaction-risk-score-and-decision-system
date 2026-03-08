@@ -4,16 +4,19 @@ import joblib
 import shap
 import pandas as pd
 import numpy as np
+from xgboost import XGBClassifier
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #finding the path in the whole folder
 
 #paths for specific files (like model and scaler)
-model_path =os.path.join(BASE_DIR,"models","xgb_model.pkl")
+model_path =os.path.join(BASE_DIR,"models","xgb_model.json")
 scaler_path = os.path.join(BASE_DIR,"models","scaler.pkl")
 
 #Loading the model and scaler
-model = joblib.load(model_path)
+
+model = XGBClassifier()
+model.load_model(model_path)
 scaler = joblib.load(scaler_path)
 
 #Implementing SHAP to explain that "WHY"

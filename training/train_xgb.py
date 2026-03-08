@@ -54,8 +54,8 @@ model.fit(x_train_smote,y_train_smote)
 
 
 # To Save The Trained Model
-joblib.dump(model,"xgb_model.pkl") 
-joblib.dump(scaler,"scaler.pkl")
+model.get_booster().save_model("models/xgb_model.json")
+joblib.dump(scaler,"models/scaler.pkl")
 
 
 

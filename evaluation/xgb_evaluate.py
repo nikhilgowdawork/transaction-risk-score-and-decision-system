@@ -6,16 +6,18 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import SMOTE
 from sklearn.metrics import precision_score,f1_score,recall_score,confusion_matrix,roc_auc_score
+from xgboost import XGBClassifier
 
 
 #load the data using pandas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 data_path=os.path.join(BASE_DIR,"data","transactiondata.csv")
-model_path =os.path.join(BASE_DIR,"models","xgb_model.pkl")
+model_path =os.path.join(BASE_DIR,"models","xgb_model.json")
 scaler_path = os.path.join(BASE_DIR,"models","scaler.pkl")
 
-model = joblib.load(model_path)
+model = XGBClassifier()
+model.load_model(model_path)
 scaler = joblib.load(scaler_path)
 
 
