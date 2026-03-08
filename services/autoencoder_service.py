@@ -27,9 +27,11 @@ def AutoencoderCome(transaction):
 
     reconstruction = autoencoder.predict(transaction_scaled)
 
-    error = np.mean(np.square(transaction_scaled - reconstruction),axis=1)
+    anomaly_score = np.mean(np.square(transaction_scaled - reconstruction),axis=1)
 
-    decision = (error > threshold).astype(int)
+    decision = (anomaly_score > threshold).astype(int)
+
+    error = np.minimum(anomaly_score/ threshold ,1)
 
     return error , decision
 

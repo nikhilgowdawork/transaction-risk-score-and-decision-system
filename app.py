@@ -101,7 +101,7 @@ elif st.session_state.page == 2:
  with col1:
   st.metric(
     label="Fraud Probability (XGboost)",
-    value= f"{float(st.session_state['prob'])*100:.4f}%"
+    value= f"{float(st.session_state['prob'])*100:.2f}%"
  )
  with col2:
   st.metric(
