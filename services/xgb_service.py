@@ -37,6 +37,12 @@ def XGBoostcome(transaction):
         "impact" : shap_values[0]
     })
 
-    return prob ,decision
+    top_features = feature_impact.iloc[
+        np.argsort(np.abs(feature_impact["impact"]))[::-1]
+
+    ].head(3)
+
+
+    return prob ,decision,top_features
 
 

@@ -26,6 +26,9 @@ if "error" not in st.session_state:
 if "risk_score" not in st.session_state:
  st.session_state["risk_score"] = 0.0
 
+if "top_features" not in st.session_state:
+ st.session_state["top_features"] = ""
+
 
 
 #LOAD THE FUNCTIONS TO GENERATE OUTPUT
@@ -73,7 +76,7 @@ if st.session_state.page == 1:
   
    transaction= X.iloc[st.session_state.index:st.session_state.index+1]
    # XGBOOST FUNCTION CALL
-   prob, xgb_decision = XGBoostcome(transaction)  
+   prob, xgb_decision, top_features = XGBoostcome(transaction)  
    # AUTO ENCODER FUNCTION CALL
    error, AE_decision = AutoencoderCome(transaction)
 
@@ -87,6 +90,7 @@ if st.session_state.page == 1:
    st.session_state["final_prediction"]=final_prediction
    st.session_state["risk_score"] = risk_score
    st.session_state["error"] =  error
+   st.session_state["top_features"] = top_features
   
    st.session_state.page =2
    st.rerun()
@@ -118,6 +122,11 @@ elif st.session_state.page == 2:
 
  st.write(f"**Risk Meter-**")
  st.progress(float(st.session_state["risk_score"]))
+
+ st.subheader("Top Risk Factors:")
+
+ for i in st.session_state["top_features"]["i"]:
+  st.write(f"{i}")
 
  #show raw data
  st.title("Transaction Details")  
