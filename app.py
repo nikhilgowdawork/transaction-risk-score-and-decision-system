@@ -93,7 +93,7 @@ if st.session_state.page == 1:
    st.session_state["top_features"] = top_features
   
    st.session_state.page =2
-   st.rerun()
+   st.experimental_rerun()
  
  
  #OUTPUT
@@ -124,9 +124,12 @@ elif st.session_state.page == 2:
  st.progress(float(st.session_state["risk_score"]))
 
  st.subheader("Top Risk Factors:")
+ st.write(st.session_state["top_features"])
+ 
+ for _,row in st.session_state["top_features"].iterrows():
+  st.write(f"{row['feature']} -> impact :{row['impact']:.4f}")
 
- for i in st.session_state["top_features"]["i"]:
-  st.write(f"{i}")
+ 
 
  #show raw data
  st.title("Transaction Details")  
@@ -134,7 +137,7 @@ elif st.session_state.page == 2:
 
  if st.button("back"):
   st.session_state.page = 1
-  st.rerun()
+  st.experimental_rerun()
   
   
 

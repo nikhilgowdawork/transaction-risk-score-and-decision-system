@@ -37,13 +37,12 @@ def XGBoostcome(transaction):
 
     feature_impact = pd.DataFrame({
         "feature": transaction.columns,
-        "impact" : shap_values[0]
+        "impact" : shap_values.flatten()
     })
 
     top_features = feature_impact.iloc[
-        np.argsort(np.abs(feature_impact["impact"]))[::-1]
-
-    ].head(3)
+        np.argsort(np.abs(feature_impact["impact"]))[::-1]].head(3)
+    top_features = top_features.reset_index(drop = True)
 
 
     return prob ,decision,top_features

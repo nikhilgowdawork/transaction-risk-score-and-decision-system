@@ -63,5 +63,5 @@ history = autoencoder.fit(
 
 )
 
-autoencoder.save("autoencoder_model.keras")
-joblib.dump(scaler,"AEscaler.pkl")
+autoencoder.save("models/autoencoder_model.keras")
+joblib.dump(scaler,"models/AEscaler.pkl")
