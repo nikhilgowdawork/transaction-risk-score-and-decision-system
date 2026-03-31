@@ -1,5 +1,6 @@
-venv/
+majorprojectvenv/
 __pycache__/
 *.pyc
 *.pyd
-.DS_Store
+.DS_Store 
+*.csv
