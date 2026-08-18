@@ -56,7 +56,7 @@ X = df.drop("Class",axis=1)
 if st.session_state.page == 1:
  st.title("TRANSACTION ANALYSIS AND DECISION 💳") 
  st.info("Model: XGBoost | Imbalance handled using SMOTE | "
-    "Custom decision threshold enabled | Real-time risk simulation")
+    "Real-time risk simulation")
 
  #takes the transaction index as input 
  if "index" not in st.session_state:
