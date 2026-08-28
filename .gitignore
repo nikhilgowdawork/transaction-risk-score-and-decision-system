@@ -6,3 +6,4 @@ __pycache__/
 *.csv
 /venv
 dummy.py
+*.pkl
