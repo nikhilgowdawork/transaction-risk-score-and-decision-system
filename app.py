@@ -16,7 +16,7 @@ st.set_page_config(
 # -----------------------------------------------------------------------------
 # 1. HELPER FUNCTIONS & MODEL LOADING
 # -----------------------------------------------------------------------------
-@st.cache_resource
+@st.cache(allow_output_mutation=True)
 def load_xgboost_model():
     """Simulates or loads trained XGBoost Model."""
     model = xgb.XGBClassifier()
