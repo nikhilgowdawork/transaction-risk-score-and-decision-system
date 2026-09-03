@@ -1,117 +1,194 @@
-import streamlit as st
-import pandas as pd
+import os
+import joblib
 import numpy as np
+import pandas as pd
+import streamlit as st
 import matplotlib.pyplot as plt
 import xgboost as xgb
 import shap
-import time
 
-# Page Configuration
+# -----------------------------------------------------------------------------
+# 1. PAGE CONFIGURATION & SESSION STATE INITIALIZATION
+# -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Transaction Risk Scoring & Decision Engine",
     page_icon="🛡️",
     layout="wide"
 )
 
+# Initialize evaluation flag in session state
+if "evaluated" not in st.session_state:
+    st.session_state.evaluated = False
+
 # -----------------------------------------------------------------------------
-# 1. HELPER FUNCTIONS & MODEL LOADING
+# 2. HELPER FUNCTIONS & MODEL LOADING
 # -----------------------------------------------------------------------------
-@st.cache(allow_output_mutation=True)
+@st.cache_resource
 def load_xgboost_model():
-    """Simulates or loads trained XGBoost Model."""
-    model = xgb.XGBClassifier()
-    # Dummy fit if pre-trained file isn't present
-    X_dummy = pd.DataFrame(np.random.rand(100, 12), columns=[
-        'step', 'amount', 'oldbalanceOrg', 'newbalanceOrig', 
-        'oldbalanceDest', 'newbalanceDest', 'type_TRANSFER', 
-        'errorBalanceOrig', 'errorBalanceDest', 'isMerchantDest', 
-        'zeroBalOrigAfter', 'zeroBalDestBefore'
-    ])
-    y_dummy = np.random.choice([0, 1], size=100, p=[0.9, 0.1])
-    model.fit(X_dummy, y_dummy)
-    return model
+    """Loads the primary trained XGBoost model or falls back to alternatives."""
+    model_path = os.path.join("models", "xgb_kmeans_smote.pkl")
+    fallback_paths = [
+        os.path.join("models", "xgb_smote.pkl"),
+        os.path.join("models", "xgb_baseline.pkl")
+    ]
+
+    if os.path.exists(model_path):
+        return joblib.load(model_path)
+
+    for path in fallback_paths:
+        if os.path.exists(path):
+            st.sidebar.warning(f"⚠️ Primary model missing. Loaded fallback: {path}")
+            return joblib.load(path)
+
+    return None
 
 model = load_xgboost_model()
 
 # -----------------------------------------------------------------------------
-# 2. DASHBOARD HEADER & SIDEBAR
+# 3. PRE-SET SAMPLES & SIDEBAR INPUT FORM
+# -----------------------------------------------------------------------------
+PRESET_TRANSACTIONS = {
+    "-- Manual Custom Input --": {
+        "step": 1, "amount": 0.0, "oldbalanceOrg": 0.0, "newbalanceOrig": 0.0,
+        "oldbalanceDest": 0.0, "newbalanceDest": 0.0, "is_transfer": "TRANSFER"
+    },
+    "🚨 Fraud Sample 1: Full Account Drain": {
+        "step": 180, "amount": 500000.0, "oldbalanceOrg": 500000.0, "newbalanceOrig": 0.0,
+        "oldbalanceDest": 0.0, "newbalanceDest": 0.0, "is_transfer": "TRANSFER"
+    },
+    "🚨 Fraud Sample 2: Mismatched Receiver Balance": {
+        "step": 320, "amount": 250000.0, "oldbalanceOrg": 250000.0, "newbalanceOrig": 0.0,
+        "oldbalanceDest": 0.0, "newbalanceDest": 0.0, "is_transfer": "TRANSFER"
+    },
+    "✅ Legitimate Sample: Everyday Retail Payment": {
+        "step": 45, "amount": 75.50, "oldbalanceOrg": 1200.0, "newbalanceOrig": 1124.50,
+        "oldbalanceDest": 5000.0, "newbalanceDest": 5075.50, "is_transfer": "PAYMENT"
+    }
+}
+
+st.sidebar.header("🕹️ Quick Pre-fill Sample Selector")
+
+def on_preset_change():
+    st.session_state.evaluated = False
+
+selected_preset = st.sidebar.selectbox(
+    "Choose a pre-set transaction scenario:",
+    options=list(PRESET_TRANSACTIONS.keys()),
+    index=0,
+    on_change=on_preset_change
+)
+
+preset_data = PRESET_TRANSACTIONS[selected_preset]
+
+st.sidebar.markdown("---")
+st.sidebar.header("Input Transaction Parameters")
+
+# Sidebar Form keeps inputs contained until button is clicked
+with st.sidebar.form(key="transaction_form"):
+    type_options = ["TRANSFER", "CASH_OUT", "PAYMENT", "DEBIT"]
+    type_index = type_options.index(preset_data["is_transfer"]) if preset_data["is_transfer"] in type_options else 0
+
+    step = st.number_input("Step (Hour)", min_value=1, max_value=744, value=int(preset_data["step"]))
+    amount = st.number_input("Transaction Amount ($)", min_value=0.0, value=float(preset_data["amount"]))
+    oldbalanceOrg = st.number_input("Sender Old Balance ($)", min_value=0.0, value=float(preset_data["oldbalanceOrg"]))
+    newbalanceOrig = st.number_input("Sender New Balance ($)", min_value=0.0, value=float(preset_data["newbalanceOrig"]))
+    oldbalanceDest = st.number_input("Receiver Old Balance ($)", min_value=0.0, value=float(preset_data["oldbalanceDest"]))
+    newbalanceDest = st.number_input("Receiver New Balance ($)", min_value=0.0, value=float(preset_data["newbalanceDest"]))
+    is_transfer = st.selectbox("Transaction Type", type_options, index=type_index)
+
+    submit_button = st.form_submit_button(label="⚡ Evaluate Transaction", use_container_width=True)
+
+if submit_button:
+    st.session_state.evaluated = True
+
+# -----------------------------------------------------------------------------
+# 4. FEATURE ENGINEERING LOGIC
+# -----------------------------------------------------------------------------
+if st.session_state.evaluated:
+    type_TRANSFER = 1 if is_transfer == "TRANSFER" else 0
+    errorBalanceOrig = (newbalanceOrig + amount) - oldbalanceOrg
+    errorBalanceDest = (oldbalanceDest + amount) - newbalanceDest
+    isMerchantDest = 0
+    zeroBalOrigAfter = 1 if (newbalanceOrig == 0 and oldbalanceOrg > 0) else 0
+    zeroBalDestBefore = 1 if (oldbalanceDest == 0 and amount > 0) else 0
+
+    input_data = pd.DataFrame([{
+        'step': step,
+        'amount': amount,
+        'oldbalanceOrg': oldbalanceOrg,
+        'newbalanceOrig': newbalanceOrig,
+        'oldbalanceDest': oldbalanceDest,
+        'newbalanceDest': newbalanceDest,
+        'type_TRANSFER': type_TRANSFER,
+        'errorBalanceOrig': errorBalanceOrig,
+        'errorBalanceDest': errorBalanceDest,
+        'isMerchantDest': isMerchantDest,
+        'zeroBalOrigAfter': zeroBalOrigAfter,
+        'zeroBalDestBefore': zeroBalDestBefore
+    }])
+else:
+    input_data = None
+
+# -----------------------------------------------------------------------------
+# 5. DASHBOARD MAIN BODY & TABS
 # -----------------------------------------------------------------------------
 st.title("🛡️ Real-Time Transaction Risk Scoring & Explainable AI Engine")
 st.markdown("Automated fraud detection using XGBoost, SHAP Explanations, and River streaming metrics.")
 
-st.sidebar.header("Input Transaction Parameters")
+tab1, tab2, tab3 = st.tabs([
+    "⚡ Single Transaction Risk Evaluator", 
+    "🔍 SHAP Explainable AI", 
+    "📉 Streaming Performance Metrics"
+])
 
-# Sidebar Manual Input Form
-step = st.sidebar.number_input("Step (Hour)", min_value=1, max_value=744, value=1)
-amount = st.sidebar.number_input("Transaction Amount ($)", min_value=0.0, value=150000.0)
-oldbalanceOrg = st.sidebar.number_input("Sender Old Balance ($)", min_value=0.0, value=150000.0)
-newbalanceOrig = st.sidebar.number_input("Sender New Balance ($)", min_value=0.0, value=0.0)
-oldbalanceDest = st.sidebar.number_input("Receiver Old Balance ($)", min_value=0.0, value=0.0)
-newbalanceDest = st.sidebar.number_input("Receiver New Balance ($)", min_value=0.0, value=0.0)
-is_transfer = st.sidebar.selectbox("Transaction Type", ["TRANSFER", "CASH_OUT", "PAYMENT", "DEBIT"])
-
-# Feature Engineering Logic
-type_TRANSFER = 1 if is_transfer == "TRANSFER" else 0
-errorBalanceOrig = (newbalanceOrig + amount) - oldbalanceOrg
-errorBalanceDest = (oldbalanceDest + amount) - newbalanceDest
-isMerchantDest = 0
-zeroBalOrigAfter = 1 if (newbalanceOrig == 0 and oldbalanceOrg > 0) else 0
-zeroBalDestBefore = 1 if (oldbalanceDest == 0 and amount > 0) else 0
-
-input_data = pd.DataFrame([{
-    'step': step,
-    'amount': amount,
-    'oldbalanceOrg': oldbalanceOrg,
-    'newbalanceOrig': newbalanceOrig,
-    'oldbalanceDest': oldbalanceDest,
-    'newbalanceDest': newbalanceDest,
-    'type_TRANSFER': type_TRANSFER,
-    'errorBalanceOrig': errorBalanceOrig,
-    'errorBalanceDest': errorBalanceDest,
-    'isMerchantDest': isMerchantDest,
-    'zeroBalOrigAfter': zeroBalOrigAfter,
-    'zeroBalDestBefore': zeroBalDestBefore
-}])
-
-# -----------------------------------------------------------------------------
-# 3. TAB NAVIGATION
-# -----------------------------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["⚡ Single Transaction Risk Evaluator", "🔍 SHAP Explainable AI", "📉 Streaming Performance Metrics"])
-
-# TAB 1: Single Risk Evaluator
+# TAB 1: Single Transaction Risk Evaluator
 with tab1:
     st.subheader("Transaction Risk Assessment")
     
-    risk_score = float(model.predict_proba(input_data)[0][1])
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Risk Score", f"{risk_score * 100:.2f}%")
-    
-    if risk_score > 0.75:
-        col2.error("Decision: BLOCK TRANSACTION")
-        col3.warning("Reason: High probability of illicit fund transfer.")
-    elif risk_score > 0.40:
-        col2.warning("Decision: FLAG FOR REVIEW")
-        col3.info("Reason: Moderate anomaly detected.")
+    if not st.session_state.evaluated or input_data is None:
+        st.info("👈 Please select a preset transaction or fill parameters in the sidebar, then click **'⚡ Evaluate Transaction'**.")
+    elif model is None:
+        st.error("❌ Model not found! Ensure `xgb_kmeans_smote.pkl` is inside the `models/` directory.")
     else:
-        col2.success("Decision: ALLOW TRANSACTION")
-        col3.success("Reason: Low-risk transaction profile.")
+        risk_score = float(model.predict_proba(input_data)[0][1])
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Risk Score", f"{risk_score * 100:.2f}%")
+        
+        if risk_score > 0.75:
+            col2.error("Decision: BLOCK TRANSACTION")
+            col3.warning("Reason: Critical anomaly detected (high risk of fraud).")
+        elif risk_score > 0.35:
+            col2.warning("Decision: FLAG FOR REVIEW")
+            col3.info("Reason: Moderate balance discrepancy detected.")
+        else:
+            col2.success("Decision: ALLOW TRANSACTION")
+            col3.success("Reason: Standard transaction profile.")
 
-    st.markdown("---")
-    st.write("#### Evaluated Feature Vector")
-    st.dataframe(input_data)
+        st.markdown("---")
+        st.write("#### Evaluated Feature Vector")
+        st.dataframe(input_data, use_container_width=True)
 
 # TAB 2: SHAP Explanations
 with tab2:
     st.subheader("Explainable AI: SHAP Feature Attribution")
-    st.write("Understanding which features contributed to the risk score for this transaction.")
     
-    explainer = shap.Explainer(model)
-    shap_values = explainer(input_data)
-    
-    fig, ax = plt.subplots(figsize=(8, 4))
-    shap.plots.waterfall(shap_values[0], show=False)
-    st.pyplot(fig)
+    if not st.session_state.evaluated or input_data is None:
+        st.info("👈 Please evaluate a transaction first to view the SHAP feature attribution plot.")
+    elif model is None:
+        st.error("❌ Model not loaded. Cannot calculate SHAP values.")
+    else:
+        st.write("Feature breakdown showing how input variables contributed to the final risk score:")
+        try:
+            explainer = shap.Explainer(model)
+            shap_values = explainer(input_data)
+            
+            fig, ax = plt.subplots(figsize=(8, 4))
+            shap.plots.waterfall(shap_values[0], show=False)
+            st.pyplot(fig)
+            plt.close(fig)
+        except Exception as e:
+            st.error(f"Error rendering SHAP plot: {e}")
 
 # TAB 3: River Streaming Simulation Logs
 with tab3:
