@@ -6,7 +6,107 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import xgboost as xgb
 import shap
+import textwrap
+from google import genai
+from google.genai import types
 
+from dotenv import load_dotenv
+load_dotenv()  # Loads variables from .env into os.environ
+
+
+def generate_llm_explanation(risk_score, decision, input_df, shap_values, feature_names):
+    """
+    Generates a clear, professional fraud compliance audit explanation.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets.get("GEMINI_API_KEY")
+        except Exception:
+            api_key = None
+
+    if not api_key:
+        return "⚠️ Google Gemini API Key not found. Please set `GEMINI_API_KEY` in `.env`."
+
+    FEATURE_MAP = {
+        'errorBalanceOrig': 'Originating account balance discrepancy',
+        'errorBalanceDest': 'Destination account balance discrepancy',
+        'newbalanceOrig': 'Sender final account balance',
+        'oldbalanceOrg': 'Sender initial account balance',
+        'newbalanceDest': 'Receiver final account balance',
+        'oldbalanceDest': 'Receiver initial account balance',
+        'amount': 'Transaction transfer amount',
+        'type_TRANSFER': 'Wire Transfer type indicator',
+        'type_CASH_OUT': 'Cash Out withdrawal indicator',
+        'type_PAYMENT': 'Payment transaction indicator',
+        'type_DEBIT': 'Debit card transaction indicator',
+        'step': 'Simulation step hour'
+    }
+
+    row = input_df.iloc[0]
+    amount = float(row.get('amount', 0))
+    old_orig = float(row.get('oldbalanceOrg', 0))
+    new_orig = float(row.get('newbalanceOrig', 0))
+    old_dest = float(row.get('oldbalanceDest', 0))
+    new_dest = float(row.get('newbalanceDest', 0))
+
+    row_shap = shap_values[0].values if hasattr(shap_values[0], 'values') else shap_values[0]
+
+    shap_pairs = []
+    for feat, shap_val in zip(feature_names, row_shap):
+        val_inp = row[feat] if feat in row else "N/A"
+        clean_feat = FEATURE_MAP.get(feat, feat)
+        shap_pairs.append((clean_feat, float(shap_val), str(val_inp)))
+
+    risk_drivers = sorted([p for p in shap_pairs if p[1] > 0], key=lambda x: x[1], reverse=True)[:3]
+    safe_drivers = sorted([p for p in shap_pairs if p[1] < 0], key=lambda x: x[1])[:3]
+
+    risk_text = "\n".join([f"- {f}: {v}" for f, _, v in risk_drivers]) if risk_drivers else "None"
+    safe_text = "\n".join([f"- {f}: {v}" for f, _, v in safe_drivers]) if safe_drivers else "None"
+
+    prompt = textwrap.dedent(f"""\
+    System: You are an expert AI Fraud Auditor. Provide a clear compliance audit report for the financial transaction below.
+
+    TRANSACTION DATA:
+    - Transfer Amount: ${amount:,.2f}
+    - Sender Balance: ${old_orig:,.2f} -> ${new_orig:,.2f}
+    - Receiver Balance: ${old_dest:,.2f} -> ${new_dest:,.2f}
+    - Fraud Risk Score: {risk_score * 100:.2f}%
+    - Action Taken: {decision}
+
+    PRIMARY ANOMALIES:
+    {risk_text}
+
+    MITIGATING FACTORS:
+    {safe_text}
+
+    REQUIRED FORMAT:
+    Produce your response exactly using this structure:
+
+    **Executive Summary:**
+    State clearly that the transaction was assigned the outcome "{decision}" because of the specific balance changes observed (e.g. sender balance wiped out to $0.00 while transferring ${amount:,.2f}).
+
+    **Key Audit Findings:**
+    - Bullet point 1: Detail the sender account drain/discrepancy.
+    - Bullet point 2: Detail the receiver balance status or transfer type anomaly.
+    """)
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=400,
+            )
+        )
+        return response.text.strip()
+
+    except Exception as e:
+        return f"⚠️ Could not generate Gemini explanation: {str(e)}"
+    
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION & SESSION STATE INITIALIZATION
 # -----------------------------------------------------------------------------
@@ -170,25 +270,52 @@ with tab1:
         st.dataframe(input_data, use_container_width=True)
 
 # TAB 2: SHAP Explanations
+# TAB 2: SHAP & LLM Natural Language Explanation
 with tab2:
-    st.subheader("Explainable AI: SHAP Feature Attribution")
+    st.subheader("🔍 Explainable AI & Audit Narrative")
     
     if not st.session_state.evaluated or input_data is None:
-        st.info("👈 Please evaluate a transaction first to view the SHAP feature attribution plot.")
+        st.info("👈 Please evaluate a transaction first to view feature attributions and AI commentary.")
     elif model is None:
         st.error("❌ Model not loaded. Cannot calculate SHAP values.")
     else:
-        st.write("Feature breakdown showing how input variables contributed to the final risk score:")
-        try:
-            explainer = shap.Explainer(model)
-            shap_values = explainer(input_data)
-            
-            fig, ax = plt.subplots(figsize=(8, 4))
-            shap.plots.waterfall(shap_values[0], show=False)
-            st.pyplot(fig)
-            plt.close(fig)
-        except Exception as e:
-            st.error(f"Error rendering SHAP plot: {e}")
+        # Calculate SHAP Values
+        explainer = shap.Explainer(model)
+        shap_values = explainer(input_data)
+        
+        # Calculate Risk Score & Decision
+        risk_score = float(model.predict_proba(input_data)[0][1])
+        if risk_score > 0.75:
+            decision = "BLOCK TRANSACTION"
+        elif risk_score > 0.35:
+            decision = "FLAG FOR REVIEW"
+        else:
+            decision = "ALLOW TRANSACTION"
+
+        # Divide layout into two columns: LLM Text Narrative on Left, SHAP Plot on Right
+        col_text, col_plot = st.columns([1, 1])
+
+        with col_text:
+            st.markdown("### 🤖 Compliance AI Audit Note")
+            with st.spinner("Generating LLM investigation summary..."):
+                llm_summary = generate_llm_explanation(
+                    risk_score=risk_score,
+                    decision=decision,
+                    input_df=input_data,
+                    shap_values=shap_values,
+                    feature_names=input_data.columns
+                )
+            st.info(llm_summary)
+
+        with col_plot:
+            st.markdown("### 📊 SHAP Feature Attribution")
+            try:
+                fig, ax = plt.subplots(figsize=(7, 4))
+                shap.plots.waterfall(shap_values[0], show=False)
+                st.pyplot(fig)
+                plt.close(fig)
+            except Exception as e:
+                st.error(f"Error rendering SHAP plot: {e}")
 
 # TAB 3: River Streaming Simulation Logs
 with tab3:
