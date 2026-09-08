@@ -79,7 +79,7 @@ def generate_llm_explanation(risk_score: float, decision: str, input_df: pd.Data
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.1,

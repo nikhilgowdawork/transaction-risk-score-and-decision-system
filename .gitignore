@@ -9,4 +9,5 @@ dummy.py
 .env
 .vscode
 /venv
-
+\package-lock.json
+\node_modules
