@@ -19,7 +19,7 @@ class FraudModelTrainer:
     Evaluates baseline, standard SMOTE, and KMeans-SMOTE configurations using XGBoost.
     """
     def __init__(self, X_train: pd.DataFrame, X_test: pd.DataFrame, 
-                 y_train: pd.Series, y_test: pd.Series, models_dir: str = "models"):
+        y_train: pd.Series, y_test: pd.Series, models_dir: str = "models"):
         self.X_train = X_train.astype(np.float32)
         self.X_test = X_test.astype(np.float32)
         self.y_train = y_train.astype(int)
@@ -121,9 +121,9 @@ class FraudModelTrainer:
 
 
 if __name__ == "__main__":
-    data_path = os.path.join("data", "transactiondata.csv")
+    data_path = os.path.join("backend/data", "transactiondata.csv")
     if not os.path.exists(data_path):
-        data_path = os.path.join("data", "paysim.csv")
+        data_path = os.path.join("backend/data", "paysim.csv")
 
     pipeline = PaySimDataPipeline(raw_filepath=data_path, sample_size=200000)
     X_train, X_test, y_train, y_test = pipeline.prepare_pipeline()

@@ -1,6 +1,8 @@
 import os
 import pandas as pd
 import numpy as np
+import sys
+
 
 class PaySimDataPipeline:
     """
@@ -81,9 +83,9 @@ class PaySimDataPipeline:
         return X_train, X_test, y_train, y_test
 
 if __name__ == "__main__":
-    DATA_PATH = os.path.join("data", "transactiondata.csv")
+    DATA_PATH = os.path.join("backend/data", "transactiondata.csv")
     if not os.path.exists(DATA_PATH):
-        DATA_PATH = os.path.join("data", "paysim.csv")
+        DATA_PATH = os.path.join("backend/data", "paysim.csv")
 
     pipeline = PaySimDataPipeline(raw_filepath=DATA_PATH, sample_size=200000)
     X_train, X_test, y_train, y_test = pipeline.prepare_pipeline()
