@@ -67,9 +67,9 @@ class StreamingFraudDetector:
 
 
 if __name__ == "__main__":
-    data_path = os.path.join("data", "transactiondata.csv")
+    data_path = os.path.join("backend/data", "transactiondata.csv")
     if not os.path.exists(data_path):
-        data_path = os.path.join("data", "paysim.csv")
+        data_path = os.path.join("backend/data", "paysim.csv")
 
     pipeline = PaySimDataPipeline(raw_filepath=data_path, sample_size=200000)
     _, X_test, _, y_test = pipeline.prepare_pipeline()
