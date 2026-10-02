@@ -194,6 +194,34 @@ The audit summary generator expects a Gemini API key. Add this to a local `.env`
 GEMINI_API_KEY=your_api_key_here
 ```
 
+## Verified model performance
+
+The benchmark values below were measured by running the current project scripts against the repo’s dataset on 2026-10-02.
+
+### Batch XGBoost benchmark results
+
+| Model | Precision | Recall | F1-score | ROC-AUC |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline XGBoost | 0.9965 | 0.9930 | 0.9947 | 0.9997 |
+| XGBoost + Standard SMOTE | 1.0000 | 0.9930 | 0.9965 | 0.9992 |
+| XGBoost + KMeans-SMOTE | 0.9965 | 1.0000 | 0.9983 | 1.0000 |
+
+### Streaming evaluation results
+
+The River online simulation was run with the same chronological holdout split and produced:
+
+| Metric | Value |
+| --- | ---: |
+| Final Online Accuracy | 0.9966 |
+| Final Online F1-Score | 0.6895 |
+| Final Online ROC-AUC | 0.8611 |
+
+### Notes on interpretation
+
+- The best batch performance on this dataset is from the KMeans-SMOTE model with an F1-score of 0.9983 and ROC-AUC of 1.0000.
+- The streaming River model is useful for online drift monitoring, but its current F1-score is lower than the offline XGBoost models in this dataset.
+- These values are the exact results from the currently checked-in project configuration and data.
+
 ## Dependencies
 
 The project uses the packages listed in `requirements.txt`, including:
