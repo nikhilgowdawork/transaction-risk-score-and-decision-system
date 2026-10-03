@@ -3,388 +3,255 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transaction Risk Scoring System</title>
-  <!-- Tailwind CSS CDN -->
+  <title>Transaction Risk Scoring & Decision Engine</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Marked.js CDN for Markdown rendering -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-6">
-
-  <!-- Header -->
-  <header class="max-w-7xl mx-auto mb-8 border-b border-slate-800 pb-4 flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-white flex items-center gap-2">
-        <span class="text-indigo-400">⚡</span> Transaction Risk Scoring & Decision System
-      </h1>
-      <p class="text-slate-400 text-sm mt-1">XGBoost ML + SHAP XAI + Gemini AML Audit + River Online Stream Simulator</p>
-    </div>
-    <div class="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300">
-      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-      FastAPI Core Online
-    </div>
-  </header>
-
-  <!-- Main Layout -->
-  <main class="max-w-7xl mx-auto space-y-8">
-
-    <!-- Quick Presets Selection Bar -->
-    <section class="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4 shadow-lg">
-      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h3 class="text-sm font-semibold text-slate-200">Interactive Telemetry Presets</h3>
-          <p class="text-xs text-slate-400">Select pre-configured vector scenarios to test ML decision thresholds instantly:</p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <!-- Safe Presets -->
-          <button onclick="applyPreset('safe1')" class="px-3 py-1.5 bg-emerald-950/60 border border-emerald-700/60 hover:bg-emerald-900/60 text-emerald-300 text-xs font-medium rounded-lg transition">
-            ✅ Safe: Small Transfer
-          </button>
-          <button onclick="applyPreset('safe2')" class="px-3 py-1.5 bg-emerald-950/60 border border-emerald-700/60 hover:bg-emerald-900/60 text-emerald-300 text-xs font-medium rounded-lg transition">
-            ✅ Safe: Merchant Cash-Out
-          </button>
-          <button onclick="applyPreset('safe3')" class="px-3 py-1.5 bg-emerald-950/60 border border-emerald-700/60 hover:bg-emerald-900/60 text-emerald-300 text-xs font-medium rounded-lg transition">
-            ✅ Safe: Partial Balance Tx
-          </button>
-
-          <!-- Fraud Presets -->
-          <button onclick="applyPreset('fraud1')" class="px-3 py-1.5 bg-red-950/60 border border-red-700/60 hover:bg-red-900/60 text-red-300 text-xs font-medium rounded-lg transition">
-            🚨 Fraud: Complete Wipeout
-          </button>
-          <button onclick="applyPreset('fraud2')" class="px-3 py-1.5 bg-red-950/60 border border-red-700/60 hover:bg-red-900/60 text-red-300 text-xs font-medium rounded-lg transition">
-            🚨 Fraud: Zero Dest Anomaly
-          </button>
-          <button onclick="applyPreset('fraud3')" class="px-3 py-1.5 bg-red-950/60 border border-red-700/60 hover:bg-red-900/60 text-red-300 text-xs font-medium rounded-lg transition">
-            🚨 Fraud: Massive Rapid Transfer
-          </button>
-        </div>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-6 font-sans">
+  <div class="max-w-6xl mx-auto space-y-8">
+    
+    <!-- Header -->
+    <header class="border-b border-slate-800 pb-4 flex justify-between items-center">
+      <div>
+        <h1 class="text-2xl font-bold text-indigo-400">Transaction Risk Scoring System</h1>
+        <p class="text-sm text-slate-400">XGBoost Risk Engine • SHAP Feature Attribution • Gemini LLM Audit</p>
       </div>
-    </section>
+      <span class="bg-indigo-900/50 text-indigo-300 text-xs px-3 py-1 rounded-full border border-indigo-700">API Active</span>
+    </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
       
-      <!-- Input Form -->
-      <section class="lg:col-span-5 bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl h-fit">
-        <h2 class="text-lg font-semibold text-white mb-4">Simulate Payment Telemetry</h2>
+      <!-- Input Panel -->
+      <div class="lg:col-span-5 bg-slate-800/60 p-6 rounded-xl border border-slate-700/50 h-fit space-y-6">
         
-        <form id="riskForm" class="space-y-4">
+        <div>
+          <label class="block text-xs uppercase text-slate-400 font-bold mb-2">Preset Scenarios</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" onclick="applyPreset('legit')" class="py-2 px-3 bg-slate-700 hover:bg-slate-600 rounded text-xs font-semibold text-slate-200 transition">Legitimate</button>
+            <button type="button" onclick="applyPreset('drain')" class="py-2 px-3 bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 rounded text-xs font-semibold border border-amber-800 transition">Account Drain</button>
+            <button type="button" onclick="applyPreset('ghost')" class="py-2 px-3 bg-red-950/60 hover:bg-red-900/60 text-red-300 rounded text-xs font-semibold border border-red-800 transition">Ghost Transfer</button>
+          </div>
+        </div>
+
+        <form id="riskForm" onsubmit="evaluateRisk(event)" class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Time Step</label>
+              <input type="number" id="step" value="1" min="1" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Transaction Type</label>
+              <select id="is_transfer" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                <option value="1">TRANSFER</option>
+                <option value="0">CASH_OUT / OTHER</option>
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label class="block text-xs font-medium text-slate-400 mb-1">Transaction Type</label>
-            <select id="is_transfer" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200">
-              <option value="TRANSFER">TRANSFER</option>
-              <option value="CASH_OUT">CASH_OUT</option>
-            </select>
+            <label class="block text-xs text-slate-400 mb-1">Amount (USD)</label>
+            <input type="number" step="0.01" id="amount" value="180000.00" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Step (Hour)</label>
-              <input type="number" id="step" value="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
+              <label class="block text-xs text-slate-400 mb-1">Sender Old Balance</label>
+              <input type="number" step="0.01" id="oldbalanceOrg" value="180000.00" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Amount ($)</label>
-              <input type="number" id="amount" value="500000" step="any" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
+              <label class="block text-xs text-slate-400 mb-1">Sender New Balance</label>
+              <input type="number" step="0.01" id="newbalanceOrig" value="0.00" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Origin Old Balance ($)</label>
-              <input type="number" id="oldbalanceOrg" value="500000" step="any" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
+              <label class="block text-xs text-slate-400 mb-1">Receiver Old Balance</label>
+              <input type="number" step="0.01" id="oldbalanceDest" value="0.00" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Origin New Balance ($)</label>
-              <input type="number" id="newbalanceOrig" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
+              <label class="block text-xs text-slate-400 mb-1">Receiver New Balance</label>
+              <input type="number" step="0.01" id="newbalanceDest" value="0.00" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none" />
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Dest Old Balance ($)</label>
-              <input type="number" id="oldbalanceDest" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-400 mb-1">Dest New Balance ($)</label>
-              <input type="number" id="newbalanceDest" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200" required />
-            </div>
-          </div>
-
-          <button type="submit" id="submitBtn" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-4 rounded-lg transition duration-200">
-            Assess Risk & Evaluate Policy
+          <button type="submit" id="submitBtn" class="w-full mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex justify-center items-center gap-2">
+            Evaluate
           </button>
         </form>
-
-        <div id="errorMessage" class="hidden mt-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-red-400 text-xs"></div>
-      </section>
+      </div>
 
       <!-- Results Panel -->
-      <section class="lg:col-span-7 space-y-6">
+      <div class="lg:col-span-7 space-y-6">
         
-        <!-- Default Placeholder State -->
-        <div id="placeholderState" class="h-full bg-slate-800/30 border border-slate-800 border-dashed rounded-xl p-12 flex flex-col items-center justify-center text-center">
-          <span class="text-4xl mb-3">📊</span>
-          <h3 class="text-base font-medium text-slate-300">No Assessment Loaded</h3>
-          <p class="text-xs text-slate-500 max-w-sm mt-1">Select a scenario preset above or submit custom inputs to evaluate real-time ML risk scores and Gemini compliance notes.</p>
+        <!-- Default State Message -->
+        <div id="placeholder" class="bg-slate-800/30 border border-dashed border-slate-700 p-12 rounded-xl text-center text-slate-500">
+          Select a preset or enter parameters, then click <span class="text-indigo-400 font-semibold">Evaluate</span> to generate the assessment.
         </div>
 
-        <!-- Active Results Container -->
-        <div id="resultsContainer" class="hidden space-y-6">
+        <!-- Hidden Results Container -->
+        <div id="results" class="hidden space-y-6">
           
-          <!-- Decision Banner -->
-          <div id="decisionBanner" class="p-6 border rounded-xl shadow-lg flex items-start gap-4">
-            <div id="decisionIcon" class="text-3xl"></div>
-            <div class="flex-1">
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">System Decision</span>
-                <span id="riskScoreBadge" class="text-xs font-mono font-bold px-2 py-1 bg-slate-900/60 rounded text-slate-200"></span>
-              </div>
-              <h3 id="decisionTitle" class="text-xl font-bold mb-2"></h3>
-              <p class="text-xs text-slate-300"><strong class="text-slate-100">Primary Risk Driver:</strong> <span id="primaryDriver"></span></p>
+          <!-- Score Card -->
+          <div class="bg-slate-800/60 p-6 rounded-xl border border-slate-700/50 grid grid-cols-2 gap-4 items-center">
+            <div>
+              <div class="text-xs text-slate-400 uppercase font-semibold">Risk Decision</div>
+              <div id="decisionBadge" class="text-xl font-bold mt-1">---</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-slate-400 uppercase font-semibold">Risk Probability</div>
+              <div id="riskScore" class="text-3xl font-extrabold text-indigo-400 mt-1">0.0%</div>
             </div>
           </div>
 
-          <!-- Interactive SHAP Feature Attribution Panel -->
-          <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl">
-            <h3 class="text-base font-semibold text-white mb-2 border-b border-slate-700 pb-2">SHAP Feature Risk Impact Analysis</h3>
-            <p class="text-xs text-slate-400 mb-4">Evaluates top feature contributors driving the model towards Fraud (+) or Safe (-):</p>
-            <div id="shapBars" class="space-y-3"></div>
+          <!-- SHAP Contributions -->
+          <div class="bg-slate-800/60 p-6 rounded-xl border border-slate-700/50 space-y-3">
+            <h3 class="text-sm font-semibold text-slate-300">SHAP Feature Contributions</h3>
+            <div id="shapList" class="space-y-2 text-xs"></div>
           </div>
 
-          <!-- Gemini Audit Output -->
-          <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl">
-            <h3 class="text-base font-semibold text-white mb-3 border-b border-slate-700 pb-2">Gemini Compliance & AML Audit</h3>
-            <div id="auditSummary" class="prose prose-invert max-w-none text-slate-300 text-sm leading-relaxed space-y-2"></div>
-          </div>
-
-          <!-- Feature Vector Breakdown -->
-          <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl">
-            <h3 class="text-base font-semibold text-white mb-3 border-b border-slate-700 pb-2">Calculated Feature Vector</h3>
-            <div id="featureGrid" class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs"></div>
+          <!-- LLM Executive Audit -->
+          <div class="bg-slate-800/60 p-6 rounded-xl border border-slate-700/50 space-y-3">
+            <h3 class="text-sm font-semibold text-indigo-300">Gemini Compliance Audit Summary</h3>
+            <div id="llmAudit" class="prose prose-invert prose-sm text-slate-300 max-w-none"></div>
           </div>
 
         </div>
 
-      </section>
+      </div>
+
     </div>
-
-    <!-- River Online Stream Simulation Widget -->
-    <section class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl space-y-4">
-      <div class="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-700 pb-4 gap-4">
-        <div>
-          <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-            <span class="text-cyan-400">🌊</span> River Online Adaptive Streaming & Concept Drift Simulator
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Simulates high-throughput streaming ingestion (`learn_one`) over sequential payment records:</p>
-        </div>
-        <button id="startStreamBtn" onclick="toggleRiverStream()" class="px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs rounded-lg transition">
-          ▶ Run Live River Stream
-        </button>
-      </div>
-
-      <!-- Live Stream Console Output -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-        <div class="bg-slate-900 p-3 rounded-lg border border-slate-800">
-          <span class="text-slate-400 block">Processed Events</span>
-          <span id="streamCounter" class="text-xl text-white font-bold">0 / 40,000</span>
-        </div>
-        <div class="bg-slate-900 p-3 rounded-lg border border-slate-800">
-          <span class="text-slate-400 block">Online F1-Score</span>
-          <span id="streamF1" class="text-xl text-amber-400 font-bold">0.0000</span>
-        </div>
-        <div class="bg-slate-900 p-3 rounded-lg border border-slate-800">
-          <span class="text-slate-400 block">Online ROC-AUC</span>
-          <span id="streamRoc" class="text-xl text-emerald-400 font-bold">0.5000</span>
-        </div>
-      </div>
-
-      <!-- Live Stream Terminal Simulation -->
-      <div id="streamTerminal" class="bg-slate-950 p-4 rounded-lg font-mono text-xs text-slate-300 h-32 overflow-y-auto space-y-1 border border-slate-800">
-        <p class="text-slate-500">[System] Stream engine idle. Click 'Run Live River Stream' to initiate sequential ingestion...</p>
-      </div>
-    </section>
-
-  </main>
+  </div>
 
   <script>
-    const API_URL = "http://127.0.0.1:8000/api/v1/assess";
-
     const presets = {
-      safe1: { is_transfer: "TRANSFER", step: 1, amount: 250, oldbalanceOrg: 5000, newbalanceOrig: 4750, oldbalanceDest: 1200, newbalanceDest: 1450 },
-      safe2: { is_transfer: "CASH_OUT", step: 5, amount: 100, oldbalanceOrg: 300, newbalanceOrig: 200, oldbalanceDest: 5000, newbalanceDest: 5100 },
-      safe3: { is_transfer: "TRANSFER", step: 12, amount: 1200, oldbalanceOrg: 15000, newbalanceOrig: 13800, oldbalanceDest: 50, newbalanceDest: 1250 },
-      fraud1: { is_transfer: "TRANSFER", step: 1, amount: 500000, oldbalanceOrg: 500000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 0 },
-      fraud2: { is_transfer: "CASH_OUT", step: 3, amount: 800000, oldbalanceOrg: 800000, newbalanceOrig: 0, oldbalanceDest: 0, newbalanceDest: 800000 },
-      fraud3: { is_transfer: "TRANSFER", step: 24, amount: 1500000, oldbalanceOrg: 1500000, newbalanceOrig: 0, oldbalanceDest: 250000, newbalanceDest: 250000 }
+      legit: {
+        step: 10,
+        is_transfer: 0,
+        amount: 2500.00,
+        oldbalanceOrg: 15000.00,
+        newbalanceOrig: 12500.00,
+        oldbalanceDest: 5000.00,
+        newbalanceDest: 7500.00
+      },
+      drain: {
+        step: 1,
+        is_transfer: 1,
+        amount: 350000.00,
+        oldbalanceOrg: 350000.00,
+        newbalanceOrig: 0.00,
+        oldbalanceDest: 0.00,
+        newbalanceDest: 0.00
+      },
+      ghost: {
+        step: 100,
+        is_transfer: 1,
+        amount: 1000000.00,
+        oldbalanceOrg: 1000000.00,
+        newbalanceOrig: 0.00,
+        oldbalanceDest: 50000.00,
+        newbalanceDest: 50000.00
+      }
     };
 
     function applyPreset(key) {
       const data = presets[key];
       if (!data) return;
-      document.getElementById("is_transfer").value = data.is_transfer;
+
       document.getElementById("step").value = data.step;
+      document.getElementById("is_transfer").value = data.is_transfer;
       document.getElementById("amount").value = data.amount;
       document.getElementById("oldbalanceOrg").value = data.oldbalanceOrg;
       document.getElementById("newbalanceOrig").value = data.newbalanceOrig;
       document.getElementById("oldbalanceDest").value = data.oldbalanceDest;
       document.getElementById("newbalanceDest").value = data.newbalanceDest;
 
-      // Auto submit on preset selection
-      document.getElementById("riskForm").dispatchEvent(new Event("submit"));
+      // Visual indicator animation without auto-submitting
+      const form = document.getElementById("riskForm");
+      form.classList.add("ring-2", "ring-indigo-500");
+      setTimeout(() => form.classList.remove("ring-2", "ring-indigo-500"), 400);
     }
 
-    document.getElementById("riskForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    async function evaluateRisk(event) {
+      event.preventDefault();
+
       const submitBtn = document.getElementById("submitBtn");
-      const errorDiv = document.getElementById("errorMessage");
-      errorDiv.classList.add("hidden");
-      
+      const placeholder = document.getElementById("placeholder");
+      const results = document.getElementById("results");
+
       submitBtn.disabled = true;
-      submitBtn.innerText = "Evaluating Risk Telemetry...";
+      submitBtn.innerText = "Evaluating...";
 
       const payload = {
         step: parseInt(document.getElementById("step").value),
+        is_transfer: parseInt(document.getElementById("is_transfer").value),
         amount: parseFloat(document.getElementById("amount").value),
         oldbalanceOrg: parseFloat(document.getElementById("oldbalanceOrg").value),
         newbalanceOrig: parseFloat(document.getElementById("newbalanceOrig").value),
         oldbalanceDest: parseFloat(document.getElementById("oldbalanceDest").value),
-        newbalanceDest: parseFloat(document.getElementById("newbalanceDest").value),
-        is_transfer: document.getElementById("is_transfer").value
+        newbalanceDest: parseFloat(document.getElementById("newbalanceDest").value)
       };
 
       try {
-        const response = await fetch(API_URL, {
+        const response = await fetch("http://127.0.0.1:8000/api/v1/assess", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error(`Server returned status ${response.status}`);
-
-        const data = await response.json();
-        renderResults(data);
-      } catch (err) {
-        errorDiv.innerText = `Error connecting to backend: ${err.message}. Ensure FastAPI is running.`;
-        errorDiv.classList.remove("hidden");
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.innerText = "Assess Risk & Evaluate Policy";
-      }
-    });
-
-    function renderResults(data) {
-      document.getElementById("placeholderState").classList.add("hidden");
-      document.getElementById("resultsContainer").classList.remove("hidden");
-
-      const banner = document.getElementById("decisionBanner");
-      const icon = document.getElementById("decisionIcon");
-      const title = document.getElementById("decisionTitle");
-
-      if (data.decision === "BLOCK TRANSACTION") {
-        banner.className = "p-6 border rounded-xl shadow-lg flex items-start gap-4 bg-red-950/80 border-red-500 text-red-400";
-        icon.innerText = "🛑";
-      } else if (data.decision === "FLAG FOR MANUAL REVIEW") {
-        banner.className = "p-6 border rounded-xl shadow-lg flex items-start gap-4 bg-amber-950/80 border-amber-500 text-amber-400";
-        icon.innerText = "⚠️";
-      } else {
-        banner.className = "p-6 border rounded-xl shadow-lg flex items-start gap-4 bg-emerald-950/80 border-emerald-500 text-emerald-400";
-        icon.innerText = "✅";
-      }
-
-      title.innerText = data.decision;
-      document.getElementById("riskScoreBadge").innerText = `Risk Score: ${(data.risk_score * 100).toFixed(2)}%`;
-      document.getElementById("primaryDriver").innerText = data.primary_driver;
-
-      // Render Dynamic SHAP Bars
-      renderShapBars(data.feature_vector, data.risk_score);
-
-      // Render Gemini Markdown Summary
-      document.getElementById("auditSummary").innerHTML = marked.parse(data.audit_summary || "No audit summary provided.");
-
-      // Render Feature Vector Grid
-      const featureGrid = document.getElementById("featureGrid");
-      featureGrid.innerHTML = "";
-      Object.entries(data.feature_vector).forEach(([key, value]) => {
-        const item = document.createElement("div");
-        item.className = "bg-slate-900/70 p-2.5 rounded-lg border border-slate-800";
-        item.innerHTML = `<span class="text-slate-400 block font-mono text-[11px]">${key}</span><span class="text-white font-semibold">${value}</span>`;
-        featureGrid.appendChild(item);
-      });
-    }
-
-    function renderShapBars(features, riskScore) {
-      const shapContainer = document.getElementById("shapBars");
-      shapContainer.innerHTML = "";
-
-      const shapFactors = [
-        { name: "zeroBalOrigAfter", weight: features.zeroBalOrigAfter ? 0.42 : -0.15 },
-        { name: "errorBalanceOrig", weight: features.errorBalanceOrig !== 0 ? 0.28 : -0.10 },
-        { name: "amount", weight: features.amount > 100000 ? 0.22 : -0.08 },
-        { name: "type_TRANSFER", weight: features.type_TRANSFER === 1 ? 0.15 : -0.05 }
-      ];
-
-      shapFactors.forEach(item => {
-        const isPositive = item.weight > 0;
-        const widthPct = Math.min(Math.abs(item.weight) * 180, 100);
-        
-        const row = document.createElement("div");
-        row.className = "text-xs space-y-1";
-        row.innerHTML = `
-          <div class="flex justify-between text-slate-300 font-mono">
-            <span>${item.name}</span>
-            <span class="${isPositive ? 'text-red-400' : 'text-emerald-400'} font-bold">${isPositive ? '+' : ''}${item.weight.toFixed(2)} SHAP</span>
-          </div>
-          <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden flex">
-            <div class="${isPositive ? 'bg-red-500' : 'bg-emerald-500'} h-full transition-all duration-500" style="width: ${widthPct}%"></div>
-          </div>
-        `;
-        shapContainer.appendChild(row);
-      });
-    }
-
-    // River Stream Simulation Logic
-    let isStreaming = false;
-    let streamInterval = null;
-    let recordsProcessed = 0;
-
-    function toggleRiverStream() {
-      const btn = document.getElementById("startStreamBtn");
-      const terminal = document.getElementById("streamTerminal");
-
-      if (isStreaming) {
-        clearInterval(streamInterval);
-        isStreaming = false;
-        btn.innerText = "▶ Resume River Stream";
-        btn.className = "px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs rounded-lg transition";
-        terminal.innerHTML += `<p class="text-amber-400">[Stream Paused] Ingestion halted by user.</p>`;
-        return;
-      }
-
-      isStreaming = true;
-      btn.innerText = "⏸ Pause River Stream";
-      btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs rounded-lg transition";
-      
-      streamInterval = setInterval(() => {
-        if (recordsProcessed >= 40000) {
-          clearInterval(streamInterval);
-          isStreaming = false;
-          btn.innerText = "✅ Stream Complete";
-          return;
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
         }
 
-        recordsProcessed += 2500;
-        const currentF1 = (Math.min(0.6895, (recordsProcessed / 40000) * 0.72)).toFixed(4);
-        const currentRoc = (0.5000 + (recordsProcessed / 40000) * 0.3611).toFixed(4);
+        const data = await response.json();
 
-        document.getElementById("streamCounter").innerText = `${recordsProcessed.toLocaleString()} / 40,000`;
-        document.getElementById("streamF1").innerText = currentF1;
-        document.getElementById("streamRoc").innerText = currentRoc;
+        // Render decision badge
+        const badge = document.getElementById("decisionBadge");
+        badge.innerText = data.decision;
+        if (data.decision === "BLOCK TRANSACTION") {
+          badge.className = "text-xl font-bold mt-1 text-red-400";
+        } else if (data.decision === "FLAG FOR REVIEW") {
+          badge.className = "text-xl font-bold mt-1 text-amber-400";
+        } else {
+          badge.className = "text-xl font-bold mt-1 text-emerald-400";
+        }
 
-        const p = document.createElement("p");
-        p.className = "text-cyan-300";
-        p.innerText = `[Checkpoint] ${recordsProcessed} records processed | Adaptive Random Forest updated | F1: ${currentF1} | ROC-AUC: ${currentRoc}`;
-        terminal.appendChild(p);
-        terminal.scrollTop = terminal.scrollHeight;
-      }, 600);
+        // Render score
+        document.getElementById("riskScore").innerText = (data.risk_score * 100).toFixed(2) + "%";
+
+        // Render SHAP factors
+        const shapContainer = document.getElementById("shapList");
+        shapContainer.innerHTML = "";
+        data.shap_contributions.slice(0, 5).forEach(item => {
+          const isPositive = item.SHAP_Contribution > 0;
+          const barWidth = Math.min(Math.abs(item.SHAP_Contribution) * 100, 100).toFixed(1);
+          
+          shapContainer.innerHTML += `
+            <div class="space-y-1">
+              <div class="flex justify-between">
+                <span class="font-mono text-slate-300">${item.Feature} (${item.Feature_Value})</span>
+                <span class="${isPositive ? 'text-red-400' : 'text-emerald-400'} font-semibold">${item.SHAP_Contribution > 0 ? '+' : ''}${item.SHAP_Contribution.toFixed(4)}</span>
+              </div>
+              <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                <div class="h-full ${isPositive ? 'bg-red-500' : 'bg-emerald-500'}" style="width: ${barWidth}%"></div>
+              </div>
+            </div>
+          `;
+        });
+
+        // Render Gemini markdown
+        document.getElementById("llmAudit").innerHTML = marked.parse(data.llm_audit);
+
+        // Show results
+        placeholder.classList.add("hidden");
+        results.classList.remove("hidden");
+
+      } catch (err) {
+        alert("Evaluation failed: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Evaluate";
+      }
     }
   </script>
 </body>
