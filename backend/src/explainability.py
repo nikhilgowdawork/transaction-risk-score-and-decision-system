@@ -73,6 +73,7 @@ class FraudXAIExplainer:
         self.model = joblib.load(model_path)
 
         # SHAP TreeExplainer works with tree-based models
+        
         self.explainer = shap.TreeExplainer(
             self.model
         )
