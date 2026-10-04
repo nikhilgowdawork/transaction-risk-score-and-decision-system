@@ -1,16 +1,16 @@
-# Transaction Risk Score & Decision System
+﻿# Transaction Risk Score & Decision System
 
-This repository contains a fraud-detection and decision-support system for financial transactions. The project trains an XGBoost fraud model on PaySim-style transaction data, exposes a FastAPI assessment endpoint, and includes explainability and streaming evaluation modules for AML monitoring.
+This repository is a fraud-detection prototype built around PaySim-style transaction data. The project focuses on preprocessing, model benchmarking, SHAP-based explainability, and streaming evaluation for transaction fraud detection.
 
 ## Project overview
 
-The implementation uses:
+The active implementation currently includes:
 
-- A feature-engineering pipeline that filters transaction types and creates balance anomaly features.
-- XGBoost benchmarks trained with baseline, SMOTE, and KMeans-SMOTE strategies.
-- A FastAPI backend that scores a transaction and returns a risk decision with a narrative explanation.
-- SHAP-based interpretability for explaining the contribution of each feature.
-- A River-based online validation simulation to evaluate streaming concept drift behavior.
+- A preprocessing pipeline that filters PaySim transactions and engineers fraud-focused features.
+- A benchmark training workflow for baseline XGBoost, SMOTE + XGBoost, and KMeans-SMOTE + XGBoost.
+- A SHAP-based explainability module for transaction-level feature attribution.
+- A River-based online learning simulation for stream evaluation and concept-drift monitoring.
+- Supporting configuration and dependency setup for the ML workflow.
 
 ## Repository structure
 
@@ -21,149 +21,158 @@ transaction-risk-score-and-decision-system/
 ├── dummy.py
 ├── readme.md
 ├── requirements.txt
-├── models/
-│   ├── xgb_baseline.pkl
-│   ├── xgb_smote.pkl
-│   └── xgb_kmeans_smote.pkl
 ├── backend/
 │   ├── __init__.py
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py
-│   │   └── schemas.py
+│   │   ├── main.py          # empty placeholder
+│   │   └── schemas.py       # Pydantic request/response models
 │   ├── data/
 │   │   ├── transactiondata.csv
-│   │   └── paysim.csv   # optional fallback dataset
+│   │   ├── train.csv
+│   │   └── test.csv
+│   ├── models/
+│   │   ├── xgb_baseline.pkl
+│   │   ├── xgb_smote.pkl
+│   │   └── xgb_kmeans_smote.pkl
 │   └── src/
 │       ├── __init__.py
 │       ├── data_pipeline.py
 │       ├── explainability.py
 │       ├── model_trainer.py
 │       └── streaming_simulation.py
+├── frontend/
+│   └── index.html           # empty placeholder
 └── venv/
 ```
 
+## Current project state
+
+This repository is best understood as a model-development and analysis project rather than a complete deployed application.
+
+Important implementation notes:
+
+- `backend/app/main.py` exists but is currently empty and does not define a FastAPI app.
+- `backend/app/schemas.py` defines the request and response schema objects, but the API route layer is not connected yet.
+- `frontend/index.html` is present but not connected to the model pipeline.
+- The actual machine-learning logic lives in the backend source files under `backend/src/` and the trained model checkpoints under `backend/models/`.
+
 ## Data pipeline
 
-The data pipeline is implemented in `backend/src/data_pipeline.py` and does the following:
+The data preprocessing logic is implemented in `backend/src/data_pipeline.py` and centers on the `PaySimDataPipeline` class.
 
-- Loads the PaySim dataset from `backend/data/transactiondata.csv`.
-- Filters to transaction types `TRANSFER` and `CASH_OUT`.
-- Sorts records by `step` to preserve chronology.
-- Engineers features such as:
-  - `type_TRANSFER`
-  - `errorBalanceOrig`
-  - `errorBalanceDest`
-  - `isMerchantDest`
-  - `zeroBalOrigAfter`
-  - `zeroBalDestBefore`
-- Drops non-model identifiers like `nameOrig`, `nameDest`, and `isFlaggedFraud`.
-- Creates a time-based train/test split.
+### What the pipeline does
 
-The main logic is in `PaySimDataPipeline.prepare_pipeline()`.
+The class handles the following steps:
+
+- validates that the raw dataset exists
+- reads the source CSV with `pandas.read_csv()`
+- filters rows to `TRANSFER` and `CASH_OUT` transaction types
+- optionally samples the dataset to a configured size
+- sorts records by `step` to preserve chronology
+- engineers fraud-detection features
+- saves processed `train.csv` and `test.csv` files to the data directory
+- loads previously processed splits when they already exist
+
+### Engineered features
+
+The `engineer_features()` method creates the following features:
+
+- `type_TRANSFER` = 1 when the transaction type is `TRANSFER`, otherwise 0
+- `errorBalanceOrig` = `newbalanceOrig + amount - oldbalanceOrg`
+- `errorBalanceDest` = `oldbalanceDest + amount - newbalanceDest`
+- `isMerchantDest` = 1 when `nameDest` starts with `M`, otherwise 0
+- `zeroBalOrigAfter` = 1 when `newbalanceOrig == 0`, otherwise 0
+- `zeroBalDestBefore` = 1 when `oldbalanceDest == 0`, otherwise 0
+
+It also drops:
+
+- `nameOrig`
+- `nameDest`
+- `isFlaggedFraud`
+
+### Entry point
+
+```python
+from backend.src.data_pipeline import PaySimDataPipeline
+
+pipeline = PaySimDataPipeline(
+    raw_filepath="backend/data/transactiondata.csv",
+    sample_size=200000,
+    random_state=42,
+)
+
+pipeline.prepare_pipeline(test_size=0.2)
+train_df, test_df = pipeline.load_processed_data()
+```
+
+`prepare_pipeline()` is the main orchestration method and produces the processed training and testing splits.
 
 ## Model training
 
-The training logic lives in `backend/src/model_trainer.py`.
+The benchmark model-training code lives in `backend/src/model_trainer.py` and uses the `FraudModelTrainer` class.
 
-It trains and compares:
+### Included scenarios
+
+The script evaluates three training paths:
 
 1. Baseline XGBoost
-2. XGBoost + SMOTE
-3. XGBoost + KMeans-SMOTE
+2. XGBoost with standard SMOTE resampling
+3. XGBoost with KMeans-SMOTE resampling
 
-The primary trained model is saved as:
+Each scenario trains a model and saves the artifact to `backend/models/`:
 
-- `models/xgb_kmeans_smote.pkl`
+- `xgb_baseline.pkl`
+- `xgb_smote.pkl`
+- `xgb_kmeans_smote.pkl`
 
-The script also saves:
-
-- `models/xgb_baseline.pkl`
-- `models/xgb_smote.pkl`
-
-### Command to train models
+### Run the benchmark
 
 ```powershell
 python -m backend.src.model_trainer
 ```
 
-## FastAPI backend
-
-The API server is in `backend/app/main.py`.
-
-### Startup
-
-From the project root:
-
-```powershell
-uvicorn backend.app.main:app --reload
-```
-
-The application loads the model from `models/xgb_kmeans_smote.pkl` at startup if present.
-
-### Endpoint
-
-```http
-POST /api/v1/assess
-```
-
-Request body model: `TransactionRequest` in `backend/app/schemas.py`
-
-Example JSON:
-
-```json
-{
-  "step": 180,
-  "amount": 500000.0,
-  "oldbalanceOrg": 500000.0,
-  "newbalanceOrig": 0.0,
-  "oldbalanceDest": 0.0,
-  "newbalanceDest": 250000.0,
-  "is_transfer": "TRANSFER"
-}
-```
-
-### Decision logic
-
-The backend computes a probability score and maps it to a decision:
-
-| Risk score | Decision |
-| --- | --- |
-| > 0.75 | `BLOCK TRANSACTION` |
-| > 0.35 | `FLAG FOR MANUAL REVIEW` |
-| <= 0.35 | `ALLOW TRANSACTION` |
-
-It also returns:
-
-- `risk_score`
-- `decision`
-- `primary_driver`
-- `audit_summary`
-- `feature_vector`
+The script prints precision, recall, F1-score, and ROC-AUC for each model.
 
 ## Explainability
 
-The XAI module is in `backend/src/explainability.py`.
+The SHAP-based explainability logic is implemented in `backend/src/explainability.py`.
 
-It uses SHAP tree explanations to analyze a transaction prediction and rank which features contributed most to the fraud score. It also supports Gemini-based narrative summaries when `GEMINI_API_KEY` is configured in the environment.
+### Features of the module
 
-### Run the explainability utility
+The file includes:
+
+- `FraudXAIExplainer` for loading a trained XGBoost model and creating a SHAP `TreeExplainer`
+- `get_feature_contributions()` for ranking feature contribution values
+- `generate_llm_explanation()` to convert SHAP findings into a human-readable narrative using Gemini when `GEMINI_API_KEY` is configured
+
+The default model path is:
+
+```text
+backend/models/xgb_kmeans_smote.pkl
+```
+
+### Run the explainability script
 
 ```powershell
 python -m backend.src.explainability
 ```
 
+This script loads processed test data, selects a fraud case, computes SHAP values, and prints a decision along with a summary when the Gemini API key is available.
+
 ## Streaming simulation
 
-The streaming behavior is implemented in `backend/src/streaming_simulation.py`.
+The River-based online learning simulation is implemented in `backend/src/streaming_simulation.py`.
 
-It uses River's `ARFClassifier` to simulate online learning and metrics tracking:
+### What it does
 
-- Accuracy
-- F1-score
-- ROC-AUC
+- creates an `ARFClassifier` from River
+- loads the processed `backend/data/test.csv`
+- iterates through rows one at a time
+- predicts before learning each sample
+- tracks online accuracy, F1-score, and ROC-AUC
 
-The model predicts before learning each record, which is useful for concept-drift evaluation.
+This is intended as a concept-drift and online-learning stress test rather than a production inference service.
 
 ### Run the streaming simulation
 
@@ -171,12 +180,50 @@ The model predicts before learning each record, which is useful for concept-drif
 python -m backend.src.streaming_simulation
 ```
 
+## API schema layer
+
+The Pydantic schema definitions live in `backend/app/schemas.py`.
+
+### Current models
+
+```python
+class TransactionRequest(BaseModel):
+    step: int
+    amount: float
+    oldbalanceOrg: float
+    newbalanceOrig: float
+    oldbalanceDest: float
+    newbalanceDest: float
+    is_transfer: str
+```
+
+```python
+class AssessmentResponse(BaseModel):
+    risk_score: float
+    decision: str
+    primary_driver: str
+    audit_summary: str
+    feature_vector: dict
+```
+
+These models are defined, but the API route layer is not implemented in `backend/app/main.py` yet.
+
+## Data files
+
+The repository includes the following data assets:
+
+- `backend/data/transactiondata.csv` — source PaySim-style dataset
+- `backend/data/train.csv` — preprocessed training split
+- `backend/data/test.csv` — preprocessed holdout split
+
+The root-level `dummy.py` script reads the raw dataset and reports basic counts for the full and filtered transaction sets.
+
 ## Environment setup
 
 ### Prerequisites
 
 - Python 3.10+
-- A PaySim-style dataset placed under `backend/data/transactiondata.csv`
+- A project root `.env` file for environment variables
 
 ### Install dependencies
 
@@ -186,43 +233,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### Optional API configuration
+### Optional Gemini configuration
 
-The audit summary generator expects a Gemini API key. Add this to a local `.env` file:
+The explainability script checks for a `GEMINI_API_KEY` value in the project root environment file:
 
 ```env
 GEMINI_API_KEY=your_api_key_here
 ```
 
-## Verified model performance
-
-The benchmark values below were measured by running the current project scripts against the repo’s dataset on 2026-10-02.
-
-### Batch XGBoost benchmark results
-
-| Model | Precision | Recall | F1-score | ROC-AUC |
-| --- | ---: | ---: | ---: | ---: |
-| Baseline XGBoost | 0.9965 | 0.9930 | 0.9947 | 0.9997 |
-| XGBoost + Standard SMOTE | 1.0000 | 0.9930 | 0.9965 | 0.9992 |
-| XGBoost + KMeans-SMOTE | 0.9965 | 1.0000 | 0.9983 | 1.0000 |
-
-### Streaming evaluation results
-
-The River online simulation was run with the same chronological holdout split and produced:
-
-| Metric | Value |
-| --- | ---: |
-| Final Online Accuracy | 0.9966 |
-| Final Online F1-Score | 0.6895 |
-| Final Online ROC-AUC | 0.8611 |
-
-### Notes on interpretation
-
-- The best batch performance on this dataset is from the KMeans-SMOTE model with an F1-score of 0.9983 and ROC-AUC of 1.0000.
-- The streaming River model is useful for online drift monitoring, but its current F1-score is lower than the offline XGBoost models in this dataset.
-- These values are the exact results from the currently checked-in project configuration and data.
-
-## Dependencies
+## Dependency summary
 
 The project uses the packages listed in `requirements.txt`, including:
 
@@ -233,16 +252,14 @@ The project uses the packages listed in `requirements.txt`, including:
 - xgboost
 - shap
 - river
-- fastapi
-- python-dotenv
-- google-genai
-- uvicorn
+- streamlit
 - joblib
+- google-genai
+- python-dotenv
 
 ## Notes
 
-- The project is organized around a backend-first architecture, not a Streamlit dashboard.
-- The primary model is expected in `models/xgb_kmeans_smote.pkl`.
-- If the default dataset path is missing, the scripts fall back to `backend/data/paysim.csv`.
-- The trained fraud logic is designed for AML monitoring, anomaly review, and transaction risk triage rather than direct auto-approval.
-
+- This is primarily a research and model-development repository.
+- The core ML workflow is implemented, but the deployment layer is still incomplete.
+- The trained model artifacts under `backend/models/` are the main reusable output of the project.
+- The repository is not yet a complete web app or dashboard.

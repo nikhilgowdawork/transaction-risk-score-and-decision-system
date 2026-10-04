@@ -8,8 +8,6 @@ from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 from imblearn.over_sampling import SMOTE, KMeansSMOTE
 from sklearn.cluster import MiniBatchKMeans
 
-from data_pipeline import PaySimDataPipeline
-
 
 class FraudModelTrainer:
     """
