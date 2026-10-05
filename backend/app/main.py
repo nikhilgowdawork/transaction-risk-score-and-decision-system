@@ -129,7 +129,7 @@ class UnifiedTransactionRequest(BaseModel):
 def startup_event():
     model_path = MODELS_DIR / "xgb_kmeans_smote.pkl"
     if model_path.exists():
-        state.xai_engine = FraudXAIExplainer(model_filename="xgb_kmeans_smote.pkl")
+        state.xai_engine = FraudXAIExplainer(model_path= model_path)
         print("Initialized XGBoost FraudXAIExplainer Engine.")
 
     state.river_model = forest.ARFClassifier(n_models=10, seed=42)
@@ -157,7 +157,7 @@ def startup_event():
     state.simulated_history = database.get_recent_transactions(limit=1000)
 
     print(f"Persistent transaction count: {database.get_transaction_count()}")
-    print(f"River simulation resume index: {database.get_last_stream_index()}")
+    
 
 
 if FRONTEND_DIR.exists():

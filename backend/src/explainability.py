@@ -49,7 +49,6 @@ class FraudXAIExplainer:
         self,
         model_path: str = None
     ):
-
         # --------------------------------------------------------
         # If model path is not provided, use backend/models
         # --------------------------------------------------------
@@ -133,192 +132,192 @@ class FraudXAIExplainer:
 # GEMINI EXPLANATION
 # ================================================================
 
-def generate_llm_explanation(
-    risk_score: float,
-    decision: str,
-    input_df: pd.DataFrame,
-    shap_df: pd.DataFrame = None
-) -> str:
+    def generate_llm_explanation(
+        risk_score: float,
+        decision: str,
+        input_df: pd.DataFrame,
+        shap_df: pd.DataFrame = None
+    ) -> str:
 
-    """
-    Uses Gemini to convert mathematical SHAP
-    explanations into a human-readable fraud audit.
-    """
+        """
+        Uses Gemini to convert mathematical SHAP
+        explanations into a human-readable fraud audit.
+        """
 
-    api_key = os.getenv(
-        "GEMINI_API_KEY"
-    )
-
-    if not api_key:
-        return (
-            "⚠️ GEMINI_API_KEY environment variable "
-            "is not configured."
+        api_key = os.getenv(
+            "GEMINI_API_KEY"
         )
 
-    # ------------------------------------------------------------
-    # Extract transaction values
-    # ------------------------------------------------------------
-
-    amount = (
-        float(input_df["amount"].iloc[0])
-        if "amount" in input_df.columns
-        else 0.0
-    )
-
-    old_orig = (
-        float(input_df["oldbalanceOrg"].iloc[0])
-        if "oldbalanceOrg" in input_df.columns
-        else 0.0
-    )
-
-    new_orig = (
-        float(input_df["newbalanceOrig"].iloc[0])
-        if "newbalanceOrig" in input_df.columns
-        else 0.0
-    )
-
-    old_dest = (
-        float(input_df["oldbalanceDest"].iloc[0])
-        if "oldbalanceDest" in input_df.columns
-        else 0.0
-    )
-
-    new_dest = (
-        float(input_df["newbalanceDest"].iloc[0])
-        if "newbalanceDest" in input_df.columns
-        else 0.0
-    )
-
-    # ------------------------------------------------------------
-    # Convert SHAP contributions into text
-    # ------------------------------------------------------------
-
-    if shap_df is not None and not shap_df.empty:
-
-        top_factors = []
-
-        for _, row in shap_df.head(5).iterrows():
-
-            if row["SHAP_Contribution"] > 0:
-                direction = (
-                    "INCREASED risk (+fraud)"
-                )
-            else:
-                direction = (
-                    "DECREASED risk (-safe)"
-                )
-
-            top_factors.append(
-                f"- Feature '{row['Feature']}' "
-                f"(Value: {row['Feature_Value']}) "
-                f"{direction} "
-                f"with a SHAP impact of "
-                f"{row['SHAP_Contribution']:+.4f}"
+        if not api_key:
+            return (
+                "⚠️ GEMINI_API_KEY environment variable "
+                "is not configured."
             )
 
-        shap_text = "\n".join(
-            top_factors
+        # ------------------------------------------------------------
+        # Extract transaction values
+        # ------------------------------------------------------------
+
+        amount = (
+            float(input_df["amount"].iloc[0])
+            if "amount" in input_df.columns
+            else 0.0
         )
 
-    else:
-
-        shap_text = (
-            "No SHAP feature values supplied."
+        old_orig = (
+            float(input_df["oldbalanceOrg"].iloc[0])
+            if "oldbalanceOrg" in input_df.columns
+            else 0.0
         )
 
-    # ------------------------------------------------------------
-    # Gemini prompt
-    # ------------------------------------------------------------
-
-    prompt = textwrap.dedent(f"""
-        You are a Senior AML & Financial Crime Analyst
-        reviewing an automated fraud alert.
-
-        Explain the operational reason why this transaction
-        triggered a risk flag using the provided SHAP
-        model explanations.
-
-        TRANSACTION AUDIT TELEMETRY:
-
-        - Amount Transferred: USD {amount:,.2f}
-        - Sender Balance (Old -> New):
-          USD {old_orig:,.2f} -> USD {new_orig:,.2f}
-
-        - Receiver Balance (Old -> New):
-          USD {old_dest:,.2f} -> USD {new_dest:,.2f}
-
-        - Model Risk Score:
-          {risk_score * 100:.2f}%
-
-        - Engine Decision:
-          {decision}
-
-        MATHEMATICAL SHAP FEATURE ATTRIBUTIONS:
-
-        {shap_text}
-
-        RULES:
-
-        1. Base the explanation explicitly on the
-           top SHAP feature drivers.
-
-        2. Do not use generic phrases such as
-           "high model threshold".
-
-        3. Explain why the transaction appears risky
-           based on the transaction values and SHAP results.
-
-        4. Format the output in concise Markdown.
-
-        5. Do NOT use LaTeX math code.
-
-        FORMAT:
-
-        ### Executive Summary
-
-        (2 direct sentences explaining the transaction
-        anomaly and top SHAP drivers)
-
-        ### Key Findings
-
-        - **Primary Model Driver:**
-          Describe the highest SHAP contribution feature
-          and its business meaning.
-
-        - **Sender/Receiver Dynamics:**
-          Describe the account movement context.
-
-    """)
-
-    # ------------------------------------------------------------
-    # Gemini API call
-    # ------------------------------------------------------------
-
-    try:
-
-        client = genai.Client(
-            api_key=api_key
+        new_orig = (
+            float(input_df["newbalanceOrig"].iloc[0])
+            if "newbalanceOrig" in input_df.columns
+            else 0.0
         )
 
-        response = client.models.generate_content(
+        old_dest = (
+            float(input_df["oldbalanceDest"].iloc[0])
+            if "oldbalanceDest" in input_df.columns
+            else 0.0
+        )
 
-            model="gemini-3.6-flash",
+        new_dest = (
+            float(input_df["newbalanceDest"].iloc[0])
+            if "newbalanceDest" in input_df.columns
+            else 0.0
+        )
 
-            contents=prompt,
+        # ------------------------------------------------------------
+        # Convert SHAP contributions into text
+        # ------------------------------------------------------------
 
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=500
+        if shap_df is not None and not shap_df.empty:
+
+            top_factors = []
+
+            for _, row in shap_df.head(5).iterrows():
+
+                if row["SHAP_Contribution"] > 0:
+                    direction = (
+                        "INCREASED risk (+fraud)"
+                    )
+                else:
+                    direction = (
+                        "DECREASED risk (-safe)"
+                    )
+
+                top_factors.append(
+                    f"- Feature '{row['Feature']}' "
+                    f"(Value: {row['Feature_Value']}) "
+                    f"{direction} "
+                    f"with a SHAP impact of "
+                    f"{row['SHAP_Contribution']:+.4f}"
+                )
+
+            shap_text = "\n".join(
+                top_factors
             )
-        )
 
-        return response.text.strip()
+        else:
 
-    except Exception as e:
+            shap_text = (
+                "No SHAP feature values supplied."
+            )
 
-        return (
-            f"⚠️ LLM Audit Generation Error: {str(e)}"
-        )
+        # ------------------------------------------------------------
+        # Gemini prompt
+        # ------------------------------------------------------------
+
+        prompt = textwrap.dedent(f"""
+            You are a Senior AML & Financial Crime Analyst
+            reviewing an automated fraud alert.
+
+            Explain the operational reason why this transaction
+            triggered a risk flag using the provided SHAP
+            model explanations.
+
+            TRANSACTION AUDIT TELEMETRY:
+
+            - Amount Transferred: USD {amount:,.2f}
+            - Sender Balance (Old -> New):
+            USD {old_orig:,.2f} -> USD {new_orig:,.2f}
+
+            - Receiver Balance (Old -> New):
+            USD {old_dest:,.2f} -> USD {new_dest:,.2f}
+
+            - Model Risk Score:
+            {risk_score * 100:.2f}%
+
+            - Engine Decision:
+            {decision}
+
+            MATHEMATICAL SHAP FEATURE ATTRIBUTIONS:
+
+            {shap_text}
+
+            RULES:
+
+            1. Base the explanation explicitly on the
+            top SHAP feature drivers.
+
+            2. Do not use generic phrases such as
+            "high model threshold".
+
+            3. Explain why the transaction appears risky
+            based on the transaction values and SHAP results.
+
+            4. Format the output in concise Markdown.
+
+            5. Do NOT use LaTeX math code.
+
+            FORMAT:
+
+            ### Executive Summary
+
+            (2 direct sentences explaining the transaction
+            anomaly and top SHAP drivers)
+
+            ### Key Findings
+
+            - **Primary Model Driver:**
+            Describe the highest SHAP contribution feature
+            and its business meaning.
+
+            - **Sender/Receiver Dynamics:**
+            Describe the account movement context.
+
+        """)
+
+        # ------------------------------------------------------------
+        # Gemini API call
+        # ------------------------------------------------------------
+
+        try:
+
+            client = genai.Client(
+                api_key=api_key
+            )
+
+            response = client.models.generate_content(
+
+                model="gemini-3.6-flash",
+
+                contents=prompt,
+
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=500
+                )
+            )
+
+            return response.text.strip()
+
+        except Exception as e:
+
+            return (
+                f"⚠️ LLM Audit Generation Error: {str(e)}"
+            )
 
 
 # ================================================================
@@ -474,8 +473,7 @@ if __name__ == "__main__":
         # 4. Gemini explanation
         # --------------------------------------------------------
 
-        audit_report = (
-            generate_llm_explanation(
+        audit_report = (xai.generate_llm_explanation(
                 risk_score=risk_score,
                 decision=decision,
                 input_df=sample_fraud,
