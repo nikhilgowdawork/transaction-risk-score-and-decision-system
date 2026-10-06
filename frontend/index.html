@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Risk Scoring & Decision System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: {
+                            50: '#FAF7F2',
+                            100: '#F5EFE6',
+                            200: '#E8DFD1',
+                            300: '#DBCFB8',
+                        },
+                        purple: {
+                            900: '#2A0845',
+                            800: '#3B0A5F',
+                            700: '#4C0D77',
+                            600: '#6411A0',
+                            500: '#7B1FA2',
+                            100: '#F3E5F5',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .badge-approve { background-color: #10B981; color: white; }
+        .badge-flag { background-color: #F59E0B; color: white; }
+        .badge-block { background-color: #EF4444; color: white; }
+        .spinner {
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 9999px;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-cream-50 text-purple-900 min-h-screen font-sans antialiased">
+
+    <!-- Top Navigation -->
+    <nav class="border-b border-cream-200 bg-purple-900 text-cream-50 sticky top-0 z-50 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="w-3 h-3 rounded-full bg-cream-100 animate-pulse"></div>
+                    <span class="font-bold text-lg tracking-wide text-cream-50">RiskEngine AI</span>
+                    <span class="text-xs bg-purple-800 text-cream-200 px-2 py-0.5 rounded border border-purple-700">v2.0</span>
+                </div>
+                <div class="flex space-x-1 bg-purple-950 p-1 rounded-lg border border-purple-800 overflow-x-auto max-w-full">
+                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-1.5 text-sm font-medium rounded-md bg-cream-100 text-purple-900 font-semibold transition">Dashboard</button>
+                    <button onclick="switchTab('manual')" id="tab-manual" class="px-4 py-1.5 text-sm font-medium rounded-md text-cream-200 hover:text-white transition">Analyze TX</button>
+                    <button onclick="switchTab('streaming')" id="tab-streaming" class="px-4 py-1.5 text-sm font-medium rounded-md text-cream-200 hover:text-white transition">River Stream</button>
+                    <button onclick="switchTab('performance')" id="tab-performance" class="px-4 py-1.5 text-sm font-medium rounded-md text-cream-200 hover:text-white transition">Metrics</button>
+                    <button onclick="switchTab('preprocessing')" id="tab-preprocessing" class="px-4 py-1.5 text-sm font-medium rounded-md text-cream-200 hover:text-white transition">Data Prep</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- ==================== TAB 1: DASHBOARD ==================== -->
+        <div id="view-dashboard" class="space-y-6">
+            <!-- Summary Stats Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm">
+                    <p class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Total Evaluated</p>
+                    <p id="stat-total" class="text-3xl font-extrabold text-purple-900 mt-2">0</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm border-l-4 border-l-emerald-500">
+                    <p class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Approved</p>
+                    <p id="stat-approved" class="text-3xl font-extrabold text-emerald-600 mt-2">0</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm border-l-4 border-l-amber-500">
+                    <p class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Flagged for Review</p>
+                    <p id="stat-flagged" class="text-3xl font-extrabold text-amber-600 mt-2">0</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm border-l-4 border-l-rose-500">
+                    <p class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Blocked</p>
+                    <p id="stat-blocked" class="text-3xl font-extrabold text-rose-600 mt-2">0</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm border-l-4 border-l-purple-500">
+                    <p class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Average Risk</p>
+                    <p id="stat-average-risk" class="text-3xl font-extrabold text-purple-900 mt-2">0.0000</p>
+                </div>
+            </div>
+
+            <!-- Risk Graph & Simulation Actions -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white border border-cream-200 p-5 rounded-xl shadow-sm space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-purple-900">Historical Risk Score Trajectory</h3>
+                        <button onclick="fetchDashboardSummary()" class="text-xs text-purple-600 hover:text-purple-800 font-semibold">Refresh Data</button>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="riskChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Simulation Quick Action Panel -->
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm flex flex-col justify-between">
+                    <div>
+                        <h3 class="font-bold text-purple-900">Single Test Simulation</h3>
+                        <p class="text-xs text-purple-700 mt-1">Sample a random transaction from test.csv and process it through XGBoost.</p>
+                    </div>
+                    <div class="my-6 p-4 bg-cream-100 rounded-lg border border-cream-200 text-xs space-y-2">
+                        <div class="flex justify-between"><span class="text-purple-700">Model:</span><span class="font-semibold">XGBoost + SMOTE</span></div>
+                        <div class="flex justify-between"><span class="text-purple-700">Explainability:</span><span class="font-semibold">SHAP + LLM Audit</span></div>
+                    </div>
+                    <button id="simulate-button" type="button" onclick="triggerSingleSimulation()" class="w-full py-2.5 bg-purple-800 hover:bg-purple-900 text-cream-50 font-semibold text-sm rounded-lg transition shadow-md">
+                        Simulate Single Transaction
+                    </button>
+                    <button id="reset-button" type="button" onclick="resetDatabase()" class="w-full mt-3 py-2 text-rose-700 border border-rose-200 hover:bg-rose-50 font-semibold text-xs rounded-lg transition">
+                        Delete All Transactions & Reset
+                    </button>
+                    <p id="dashboard-message" role="status" class="mt-3 text-xs text-purple-700"></p>
+                </div>
+            </div>
+
+            <!-- Recent Transactions Table -->
+            <div class="bg-white border border-cream-200 rounded-xl shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-cream-200 bg-cream-100">
+                    <h3 class="font-bold text-purple-900">Recent Static Transactions</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left text-purple-900">
+                        <thead class="text-xs text-purple-800 uppercase bg-cream-200/50">
+                            <tr>
+                                <th class="px-6 py-3">Index</th>
+                                <th class="px-6 py-3">TX ID</th>
+                                <th class="px-6 py-3">Amount</th>
+                                <th class="px-6 py-3">Risk Score</th>
+                                <th class="px-6 py-3">Decision</th>
+                                <th class="px-6 py-3">Audit Explanation</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-transactions-body" class="divide-y divide-cream-200">
+                            <tr><td colspan="6" class="px-6 py-4 text-center text-purple-600">Loading transactions...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 2: MANUAL ANALYSIS ==================== -->
+        <div id="view-manual" class="hidden space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Form -->
+                <div class="bg-white border border-cream-200 p-6 rounded-xl shadow-sm space-y-4">
+                    <h3 class="font-bold text-purple-900">Transaction Parameters</h3>
+                    <form id="analyze-form" onsubmit="handleAnalyzeSubmit(event)" class="space-y-4 text-sm">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Step (Time)</label>
+                                <input type="number" id="field-step" value="1" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Transfer Type</label>
+                                <select id="field-is-transfer" class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                                    <option value="1">TRANSFER</option>
+                                    <option value="0">CASH_OUT</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-purple-800 mb-1">Amount ($)</label>
+                            <input type="number" step="0.01" id="field-amount" value="150000.00" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Origin Old Balance</label>
+                                <input type="number" step="0.01" id="field-oldbalanceOrg" value="150000.00" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Origin New Balance</label>
+                                <input type="number" step="0.01" id="field-newbalanceOrig" value="0.00" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Destination Old Balance</label>
+                                <input type="number" step="0.01" id="field-oldbalanceDest" value="0.00" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-purple-800 mb-1">Destination New Balance</label>
+                                <input type="number" step="0.01" id="field-newbalanceDest" value="150000.00" required class="w-full bg-cream-50 border border-cream-200 rounded p-2 text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-600">
+                            </div>
+                        </div>
+                        <button id="analyze-button" type="submit" class="w-full py-2.5 bg-purple-800 hover:bg-purple-900 text-cream-50 font-semibold text-sm rounded-lg transition shadow-md">
+                            Evaluate Risk
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Analysis Output -->
+                <div class="bg-white border border-cream-200 p-6 rounded-xl shadow-sm space-y-4">
+                    <h3 class="font-bold text-purple-900">Evaluation Result</h3>
+                    <div id="manual-loading" class="hidden flex items-center gap-3 p-4 rounded-lg bg-purple-100 text-purple-800 text-sm" role="status" aria-live="polite">
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span>Scoring transaction and preparing the audit…</span>
+                    </div>
+                    <p id="manual-error" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm" role="alert"></p>
+                    <div id="manual-results" class="hidden space-y-4">
+                        <div class="p-4 bg-cream-100 rounded-lg border border-cream-200 flex justify-between items-center">
+                            <div>
+                                <span class="text-xs text-purple-700 block">Risk Score</span>
+                                <span id="res-score" class="text-2xl font-black text-purple-900">0.00</span>
+                            </div>
+                            <span id="res-badge" class="px-3 py-1 text-xs font-bold rounded-full">UNKNOWN</span>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold text-purple-800 mb-2 uppercase">LLM Audit Explanation</h4>
+                            <p id="res-llm" class="text-xs text-purple-900 p-3 bg-cream-50 rounded border border-cream-200 leading-relaxed"></p>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold text-purple-800 mb-2 uppercase">SHAP Feature Contributions</h4>
+                            <pre id="res-shap" class="text-xs text-purple-800 p-3 bg-cream-50 rounded border border-cream-200 overflow-x-auto"></pre>
+                        </div>
+                    </div>
+                    <div id="manual-placeholder" class="text-center py-12 text-purple-600 text-sm">
+                        Submit a transaction to generate a risk score and XAI explanation.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 3: STREAMING ==================== -->
+        <div id="view-streaming" class="hidden space-y-6">
+            <div class="flex items-center justify-between bg-white border border-cream-200 p-4 rounded-xl shadow-sm">
+                <div>
+                    <h3 class="font-bold text-purple-900">River Online Learning Stream</h3>
+                    <p class="text-xs text-purple-700">In-memory Adaptive Random Forest streaming (Predict-then-Learn)</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button type="button" onclick="startRiverStream()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition shadow-sm">Start Stream</button>
+                    <button type="button" onclick="stopRiverStream()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-lg transition shadow-sm">Stop Stream</button>
+                </div>
+            </div>
+
+            <!-- Streaming Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white border border-cream-200 p-4 rounded-xl shadow-sm text-center">
+                    <span class="text-xs text-purple-700 uppercase font-semibold">Online Accuracy</span>
+                    <p id="stream-accuracy" class="text-2xl font-bold text-purple-900 mt-1">0.0000</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-4 rounded-xl shadow-sm text-center">
+                    <span class="text-xs text-purple-700 uppercase font-semibold">Online F1 Score</span>
+                    <p id="stream-f1" class="text-2xl font-bold text-purple-900 mt-1">0.0000</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-4 rounded-xl shadow-sm text-center">
+                    <span class="text-xs text-purple-700 uppercase font-semibold">Online ROC-AUC</span>
+                    <p id="stream-roc" class="text-2xl font-bold text-purple-900 mt-1">0.0000</p>
+                </div>
+            </div>
+            <div class="bg-white border border-cream-200 p-4 rounded-xl shadow-sm">
+                <div class="flex justify-between text-xs text-purple-700 mb-2">
+                    <span id="stream-progress-label">0 / 0 predictions</span>
+                    <span id="stream-checkpoint" role="status">Waiting for stream</span>
+                </div>
+                <div class="h-2 rounded-full bg-cream-200 overflow-hidden">
+                    <div id="stream-progress" class="h-full bg-purple-600 transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <p id="stream-error" class="hidden mt-2 text-xs text-rose-700" role="alert"></p>
+            </div>
+
+            <!-- Live Stream Output Table -->
+            <div class="bg-white border border-cream-200 rounded-xl shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-cream-200 bg-cream-100 flex justify-between items-center">
+                    <h4 class="font-bold text-purple-900 text-sm">Live Stream Queue</h4>
+                    <span id="stream-status" class="text-xs text-purple-700 font-semibold">Status: Idle</span>
+                </div>
+                <div class="overflow-x-auto max-h-96">
+                    <table class="w-full text-sm text-left text-purple-900">
+                        <thead class="text-xs text-purple-800 uppercase bg-cream-200/50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2">Index</th>
+                                <th class="px-4 py-2">TX ID</th>
+                                <th class="px-4 py-2">Amount</th>
+                                <th class="px-4 py-2">Risk Score</th>
+                                <th class="px-4 py-2">Predicted</th>
+                                <th class="px-4 py-2">Actual</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stream-table-body" class="divide-y divide-cream-200 text-xs">
+                            <tr><td colspan="6" class="px-4 py-3 text-center text-purple-600">Stream inactive. Click Start Stream to begin.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 4: METRICS ==================== -->
+        <div id="view-performance" class="hidden space-y-6">
+            <div class="bg-white border border-cream-200 p-6 rounded-xl shadow-sm space-y-4">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <h3 class="font-bold text-purple-900">Static model comparison</h3>
+                        <p class="text-xs text-purple-700 mt-1">All three saved models scored against the same untouched test set.</p>
+                    </div>
+                    <button onclick="fetchMetrics()" class="text-xs text-purple-600 hover:text-purple-800 font-semibold">Refresh</button>
+                </div>
+                <div id="metrics-message" class="hidden p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900" role="status"></div>
+                <p id="metrics-summary" class="text-sm text-purple-800"></p>
+                <div class="overflow-x-auto rounded-lg border border-cream-200">
+                    <table class="min-w-full text-sm text-left text-purple-900">
+                        <thead class="bg-cream-200/60 text-xs uppercase text-purple-800">
+                            <tr>
+                                <th class="px-4 py-3">Model</th>
+                                <th class="px-4 py-3">Accuracy</th>
+                                <th class="px-4 py-3">Precision</th>
+                                <th class="px-4 py-3">Recall</th>
+                                <th class="px-4 py-3">F1</th>
+                                <th class="px-4 py-3">ROC-AUC</th>
+                                <th class="px-4 py-3">Specificity</th>
+                                <th class="px-4 py-3">False positives</th>
+                                <th class="px-4 py-3">Missed fraud</th>
+                            </tr>
+                        </thead>
+                        <tbody id="metrics-comparison-body" class="divide-y divide-cream-200">
+                            <tr><td colspan="9" class="px-4 py-4 text-purple-600">Loading model comparison…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="metrics-details" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 5: DATA PREPROCESSING ==================== -->
+        <div id="view-preprocessing" class="hidden space-y-6">
+            <div>
+                <h2 class="text-xl font-bold text-purple-900">Data preprocessing & class balance</h2>
+                <p class="text-sm text-purple-700 mt-1">Compare the transaction inputs with the features created for model scoring.</p>
+            </div>
+            <div id="preprocessing-message" class="hidden p-4 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700" role="alert"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm">
+                    <h3 class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Training data</h3>
+                    <p id="prep-train-size" class="text-2xl font-bold text-purple-900 mt-2">—</p>
+                    <p id="prep-train-balance" class="text-sm text-purple-700 mt-1">Loading class balance…</p>
+                </div>
+                <div class="bg-white border border-cream-200 p-5 rounded-xl shadow-sm">
+                    <h3 class="text-xs font-semibold text-purple-700 uppercase tracking-wider">Test data</h3>
+                    <p id="prep-test-size" class="text-2xl font-bold text-purple-900 mt-2">—</p>
+                    <p id="prep-test-balance" class="text-sm text-purple-700 mt-1">Loading class balance…</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <section class="bg-white border border-cream-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="p-5 border-b border-cream-200 bg-cream-100">
+                        <h3 class="font-bold text-purple-900">Raw transaction features</h3>
+                        <p class="text-xs text-purple-700 mt-1">Fields ingested from the transaction dataset.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-cream-200/50 text-xs uppercase text-purple-800">
+                                <tr><th class="px-5 py-3">Raw field</th><th class="px-5 py-3">Example value</th></tr>
+                            </thead>
+                            <tbody id="raw-features-body" class="divide-y divide-cream-200">
+                                <tr><td colspan="2" class="px-5 py-4 text-purple-600">Loading raw feature sample…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                <section class="bg-white border border-cream-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="p-5 border-b border-cream-200 bg-cream-100">
+                        <h3 class="font-bold text-purple-900">Engineered model features</h3>
+                        <p class="text-xs text-purple-700 mt-1">Derived signals generated by the preprocessing pipeline.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-cream-200/50 text-xs uppercase text-purple-800">
+                                <tr><th class="px-5 py-3">Engineered feature</th><th class="px-5 py-3">How it is derived</th><th class="px-5 py-3">Example</th></tr>
+                            </thead>
+                            <tbody id="engineered-features-body" class="divide-y divide-cream-200">
+                                <tr><td colspan="3" class="px-5 py-4 text-purple-600">Loading engineered feature sample…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let riskChartInstance = null;
+        let wsConnection = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            fetchDashboardSummary();
+            fetchMetrics();
+            fetchPreprocessingSummary();
+        });
+
+        function switchTab(tabName) {
+            ['dashboard', 'manual', 'streaming', 'performance', 'preprocessing'].forEach(t => {
+                const view = document.getElementById(`view-${t}`);
+                const tab = document.getElementById(`tab-${t}`);
+                if (view) view.classList.add('hidden');
+                if (tab) tab.className = "px-4 py-1.5 text-sm font-medium rounded-md text-cream-200 hover:text-white transition";
+            });
+
+            const activeView = document.getElementById(`view-${tabName}`);
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            if (activeView) activeView.classList.remove('hidden');
+            if (activeTab) activeTab.className = "px-4 py-1.5 text-sm font-medium rounded-md bg-cream-100 text-purple-900 font-semibold transition";
+        }
+
+        function initChart() {
+            const canvas = document.getElementById('riskChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            riskChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Risk Score',
+                        data: [],
+                        borderColor: '#6411A0',
+                        backgroundColor: 'rgba(100, 17, 160, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                title: items => `Transaction #${items[0].label}`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { min: 0, max: 1, grid: { color: '#E8DFD1' } },
+                        x: {
+                            title: { display: true, text: 'Transaction index' },
+                            grid: { color: '#E8DFD1' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, options);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || `Request failed (${response.status})`);
+            }
+            return data;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        }
+
+        function formatNumber(value, digits = 2) {
+            const number = Number(value);
+            return Number.isFinite(number)
+                ? number.toLocaleString(undefined, { maximumFractionDigits: digits })
+                : '—';
+        }
+
+        function updateRiskChart(records) {
+            if (!riskChartInstance) return;
+            riskChartInstance.data.labels = records.map(item => item.index);
+            riskChartInstance.data.datasets[0].data = records.map(item => item.risk_score);
+            riskChartInstance.update();
+        }
+
+        async function fetchDashboardSummary() {
+            try {
+                const data = await requestJson('/api/v1/dashboard/summary');
+
+                document.getElementById('stat-total').innerText = data.total_evaluated_transactions || 0;
+                document.getElementById('stat-approved').innerText = data.decision_counts?.approved || 0;
+                document.getElementById('stat-flagged').innerText = data.decision_counts?.flagged_for_review || 0;
+                document.getElementById('stat-blocked').innerText = data.decision_counts?.blocked || 0;
+                document.getElementById('stat-average-risk').innerText = Number(data.average_risk_score || 0).toFixed(4);
+
+                updateRiskChart(data.risk_score_graph || []);
+
+                const tbody = document.getElementById('recent-transactions-body');
+                tbody.innerHTML = '';
+
+                if (!data.recent_transactions || data.recent_transactions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-purple-600">No transactions recorded yet.</td></tr>';
+                    return;
+                }
+
+                data.recent_transactions.forEach(tx => {
+                    const badgeClass = tx.decision === 'APPROVE' ? 'badge-approve' : (tx.decision === 'BLOCK TRANSACTION' ? 'badge-block' : 'badge-flag');
+                    const amount = tx.input_raw?.amount ?? tx.amount ?? 0;
+                    const score = Number(tx.risk_score || 0);
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-cream-100/50">
+                            <td class="px-6 py-4 font-mono text-xs">${escapeHtml(tx.transaction_index)}</td>
+                            <td class="px-6 py-4 font-mono text-xs">${escapeHtml(tx.transaction_id)}</td>
+                            <td class="px-6 py-4">$${formatNumber(amount)}</td>
+                            <td class="px-6 py-4">${score.toFixed(4)}</td>
+                            <td class="px-6 py-4"><span class="px-2 py-0.5 text-xs font-bold rounded-full ${badgeClass}">${escapeHtml(tx.decision)}</span></td>
+                            <td class="px-6 py-4 text-xs text-purple-800 max-w-xs truncate" title="${escapeHtml(tx.llm_audit || 'N/A')}">${escapeHtml(tx.llm_audit || 'N/A')}</td>
+                        </tr>
+                    `;
+                });
+            } catch (err) {
+                console.error("Failed to load summary", err);
+                document.getElementById('dashboard-message').innerText = `Could not load dashboard: ${err.message}`;
+            }
+        }
+
+        async function triggerSingleSimulation() {
+            const button = document.getElementById('simulate-button');
+            const message = document.getElementById('dashboard-message');
+            button.disabled = true;
+            button.innerText = 'Scoring transaction…';
+            message.innerText = '';
+            try {
+                const transaction = await requestJson('/api/v1/transaction/simulate-single', { method: 'POST' });
+                await fetchDashboardSummary();
+                message.innerText = `Transaction ${transaction.transaction_id} scored ${Number(transaction.risk_score).toFixed(4)} — ${transaction.decision}.`;
+            } catch (err) {
+                console.error('Simulation failed', err);
+                message.innerText = `Simulation failed: ${err.message}`;
+            } finally {
+                button.disabled = false;
+                button.innerText = 'Simulate Single Transaction';
+            }
+        }
+
+        async function resetDatabase() {
+            if (!window.confirm('Delete all saved transactions and reset every transaction counter to zero? This cannot be undone.')) return;
+
+            const button = document.getElementById('reset-button');
+            const message = document.getElementById('dashboard-message');
+            button.disabled = true;
+            message.innerText = 'Resetting transaction database…';
+            try {
+                const result = await requestJson('/api/v1/database', { method: 'DELETE' });
+                await fetchDashboardSummary();
+                document.getElementById('stream-table-body').innerHTML =
+                    '<tr><td colspan="6" class="px-4 py-3 text-center text-purple-600">Database reset. Start the stream to begin again.</td></tr>';
+                document.getElementById('stream-progress-label').innerText = '0 / 0 predictions';
+                document.getElementById('stream-progress').style.width = '0%';
+                document.getElementById('stream-checkpoint').innerText = 'Database reset';
+                document.getElementById('stream-status').innerText = 'Status: Idle';
+                ['stream-accuracy', 'stream-f1', 'stream-roc'].forEach(id => {
+                    document.getElementById(id).innerText = '0.0000';
+                });
+                message.innerText = `Database cleared. Transaction count: ${result.total_evaluated_transactions}.`;
+            } catch (err) {
+                message.innerText = `Database reset failed: ${err.message}`;
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function handleAnalyzeSubmit(e) {
+            e.preventDefault();
+            const payload = {
+                step: parseInt(document.getElementById('field-step').value),
+                is_transfer: parseInt(document.getElementById('field-is-transfer').value),
+                amount: parseFloat(document.getElementById('field-amount').value),
+                oldbalanceOrg: parseFloat(document.getElementById('field-oldbalanceOrg').value),
+                newbalanceOrig: parseFloat(document.getElementById('field-newbalanceOrig').value),
+                oldbalanceDest: parseFloat(document.getElementById('field-oldbalanceDest').value),
+                newbalanceDest: parseFloat(document.getElementById('field-newbalanceDest').value)
+            };
+
+            const loading = document.getElementById('manual-loading');
+            const error = document.getElementById('manual-error');
+            const button = document.getElementById('analyze-button');
+            loading.classList.remove('hidden');
+            error.classList.add('hidden');
+            document.getElementById('manual-results').classList.add('hidden');
+            document.getElementById('manual-placeholder').classList.add('hidden');
+            button.disabled = true;
+            button.innerText = 'Evaluating…';
+
+            try {
+                const data = await requestJson('/api/v1/transaction/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                document.getElementById('manual-results').classList.remove('hidden');
+
+                document.getElementById('res-score').innerText = Number(data.risk_score).toFixed(4);
+                document.getElementById('res-llm').innerText = data.llm_audit || 'Audit explanation was not returned.';
+                document.getElementById('res-shap').innerText = JSON.stringify(data.shap_contributions, null, 2);
+
+                const badge = document.getElementById('res-badge');
+                badge.innerText = data.decision;
+                badge.className = `px-3 py-1 text-xs font-bold rounded-full ${data.decision === 'APPROVE' ? 'badge-approve' : (data.decision === 'BLOCK TRANSACTION' ? 'badge-block' : 'badge-flag')}`;
+                await fetchDashboardSummary();
+            } catch (err) {
+                console.error("Analysis failed", err);
+                error.innerText = `Analysis failed: ${err.message}`;
+                error.classList.remove('hidden');
+                document.getElementById('manual-placeholder').classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+                button.disabled = false;
+                button.innerText = 'Evaluate Risk';
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsConnection = new WebSocket(`${protocol}//${window.location.host}/ws/stream`);
+
+            wsConnection.onmessage = (event) => {
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (err) {
+                    console.error('Invalid stream message', err);
+                    return;
+                }
+
+                if (data.stream_reset) {
+                    document.getElementById('stream-table-body').innerHTML =
+                        '<tr><td colspan="6" class="px-4 py-3 text-center text-purple-600">Database reset. Click Start Stream to begin.</td></tr>';
+                    return;
+                }
+
+                if (data.online_metrics) {
+                    document.getElementById('stream-accuracy').innerText = data.online_metrics.accuracy;
+                    document.getElementById('stream-f1').innerText = data.online_metrics.f1_score;
+                    document.getElementById('stream-roc').innerText = data.online_metrics.roc_auc;
+                }
+
+                if (data.current_transaction) {
+                    const tx = data.current_transaction;
+                    const tbody = document.getElementById('stream-table-body');
+                    if (tbody.children[0]?.children.length === 1) tbody.innerHTML = '';
+
+                    const row = `
+                        <tr class="hover:bg-cream-100/50">
+                            <td class="px-4 py-2">${tx.index}</td>
+                            <td class="px-4 py-2 font-mono">${escapeHtml(tx.transaction_id)}</td>
+                            <td class="px-4 py-2">$${formatNumber(tx.amount)}</td>
+                            <td class="px-4 py-2 font-semibold">${Number(tx.risk_score).toFixed(4)}</td>
+                            <td class="px-4 py-2">${escapeHtml(tx.predicted_label)}</td>
+                            <td class="px-4 py-2">${escapeHtml(tx.actual_label)}</td>
+                        </tr>
+                    `;
+                    tbody.insertAdjacentHTML('afterbegin', row);
+                    if (tbody.children.length > 50) tbody.lastElementChild.remove();
+
+                    const processed = data.stream_processed || tx.index;
+                    const total = data.total_dataset_size || processed;
+                    document.getElementById('stream-progress-label').innerText = `${formatNumber(processed, 0)} / ${formatNumber(total, 0)} predictions`;
+                    document.getElementById('stream-progress').style.width = `${total ? Math.min(100, processed * 100 / total) : 0}%`;
+                    document.getElementById('stream-status').innerText = `Status: Predicting transaction ${processed}`;
+                    const chartIndex = data.total_processed || tx.index;
+                    riskChartInstance.data.labels.push(chartIndex);
+                    riskChartInstance.data.datasets[0].data.push(tx.risk_score);
+                    if (processed % 10 === 0 || processed === total) riskChartInstance.update('none');
+
+                    if (data.total_processed) {
+                        document.getElementById('stat-total').innerText = data.total_processed;
+                        const decisionStat = {
+                            'APPROVE': 'stat-approved',
+                            'FLAG FOR REVIEW': 'stat-flagged',
+                            'BLOCK TRANSACTION': 'stat-blocked'
+                        }[tx.decision];
+                        if (decisionStat) {
+                            const count = Number(document.getElementById(decisionStat).innerText) || 0;
+                            document.getElementById(decisionStat).innerText = count + 1;
+                        }
+                        const oldTotal = data.total_processed - 1;
+                        const oldAverage = Number(document.getElementById('stat-average-risk').innerText) || 0;
+                        const average = oldTotal > 0
+                            ? (oldAverage * oldTotal + Number(tx.risk_score)) / data.total_processed
+                            : Number(tx.risk_score);
+                        document.getElementById('stat-average-risk').innerText = average.toFixed(4);
+                    }
+                }
+
+                if (data.checkpoint) document.getElementById('stream-checkpoint').innerText = data.checkpoint;
+                if (data.stream_error) {
+                    document.getElementById('stream-status').innerText = 'Status: Error';
+                    document.getElementById('stream-error').innerText = `Stream error: ${data.stream_error}`;
+                    document.getElementById('stream-error').classList.remove('hidden');
+                }
+                if (data.stream_complete) {
+                    document.getElementById('stream-status').innerText = `Status: Complete (${data.stream_processed} predictions)`;
+                    fetchDashboardSummary();
+                }
+            };
+
+            wsConnection.onopen = () => {
+                document.getElementById('stream-error').classList.add('hidden');
+            };
+            wsConnection.onerror = () => {
+                document.getElementById('stream-error').innerText = 'Could not connect to the live stream. Check that the backend is running.';
+                document.getElementById('stream-error').classList.remove('hidden');
+            };
+        }
+
+        async function startRiverStream() {
+            try {
+                if (!wsConnection || wsConnection.readyState === WebSocket.CLOSED || wsConnection.readyState === WebSocket.CLOSING) {
+                    connectWebSocket();
+                }
+                if (wsConnection.readyState === WebSocket.CONNECTING) {
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => reject(new Error('Stream connection timed out.')), 5000);
+                        wsConnection.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
+                        wsConnection.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not connect to the live stream.')); }, { once: true });
+                    });
+                }
+                const result = await requestJson('/api/v1/stream/start', { method: 'POST' });
+                if (result.status === 'completed') {
+                    document.getElementById('stream-status').innerText = `Status: Complete (${result.total_records} predictions)`;
+                    document.getElementById('stream-progress-label').innerText = `${result.total_records} / ${result.total_records} predictions`;
+                    document.getElementById('stream-progress').style.width = '100%';
+                    return;
+                }
+                document.getElementById('stream-error').classList.add('hidden');
+                document.getElementById('stream-checkpoint').innerText = 'Predicting transactions…';
+                document.getElementById('stream-status').innerText = 'Status: Streaming Active';
+            } catch (err) {
+                document.getElementById('stream-error').innerText = `Could not start stream: ${err.message}`;
+                document.getElementById('stream-error').classList.remove('hidden');
+                document.getElementById('stream-status').innerText = 'Status: Error';
+            }
+        }
+
+        async function stopRiverStream() {
+            try {
+                await requestJson('/api/v1/stream/stop', { method: 'POST' });
+                document.getElementById('stream-status').innerText = 'Status: Stopped';
+            } catch (err) {
+                document.getElementById('stream-error').innerText = `Could not stop stream: ${err.message}`;
+                document.getElementById('stream-error').classList.remove('hidden');
+            }
+        }
+
+        async function fetchMetrics() {
+            const tbody = document.getElementById('metrics-comparison-body');
+            const details = document.getElementById('metrics-details');
+            const summary = document.getElementById('metrics-summary');
+            const message = document.getElementById('metrics-message');
+            tbody.innerHTML = '';
+            details.innerHTML = '';
+            summary.innerText = '';
+            message.className = 'hidden p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900';
+            try {
+                const result = await requestJson('/api/v1/models/performance');
+                if (!result.available) {
+                    message.innerText = result.message || 'No saved model benchmarks are available.';
+                    message.classList.remove('hidden');
+                    return;
+                }
+
+                if (result.source) {
+                    summary.innerText = `${result.source} ${formatNumber(result.test_transactions, 0)} transactions; classification threshold ${formatNumber(result.classification_threshold, 2)}.`;
+                }
+                if (!result.models || result.models.length !== 3) {
+                    message.innerText = 'The comparison must include all three model artifacts.';
+                    message.classList.remove('hidden');
+                    return;
+                }
+
+                const metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'roc_auc', 'specificity'];
+                const bestValues = Object.fromEntries(metrics.map(metric => [
+                    metric,
+                    Math.max(...result.models.map(model => Number(model[metric] ?? -Infinity)))
+                ]));
+
+                result.models.forEach(model => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-cream-50';
+                    const scoreCells = metrics.map(metric => {
+                        const value = model[metric];
+                        const best = Number(value) === bestValues[metric];
+                        return `<td class="px-4 py-3 ${best ? 'font-bold text-emerald-700' : ''}">${value === null ? 'N/A' : `${(Number(value) * 100).toFixed(2)}%`}${best ? ' ★' : ''}</td>`;
+                    }).join('');
+                    row.innerHTML = `
+                        <td class="px-4 py-3 min-w-56">
+                            <span class="font-semibold">${escapeHtml(model.model_name)}</span>
+                            <span class="block mt-1 text-xs text-purple-700">${escapeHtml(model.training_strategy)}</span>
+                        </td>
+                        ${scoreCells}
+                        <td class="px-4 py-3">${formatNumber(model.false_positives, 0)}</td>
+                        <td class="px-4 py-3">${formatNumber(model.missed_fraud, 0)}</td>
+                    `;
+                    tbody.appendChild(row);
+
+                    const matrix = model.confusion_matrix;
+                    const panel = document.createElement('section');
+                    panel.className = 'rounded-lg border border-cream-200 p-4';
+                    panel.innerHTML = `
+                        <h4 class="font-semibold text-purple-900">${escapeHtml(model.model_name)} — confusion matrix</h4>
+                        <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+                            <div class="rounded bg-emerald-50 p-3">Correctly cleared (TN)<strong class="block text-lg">${formatNumber(matrix.true_negative, 0)}</strong></div>
+                            <div class="rounded bg-amber-50 p-3">False alarms (FP)<strong class="block text-lg">${formatNumber(matrix.false_positive, 0)}</strong></div>
+                            <div class="rounded bg-rose-50 p-3">Missed fraud (FN)<strong class="block text-lg">${formatNumber(matrix.false_negative, 0)}</strong></div>
+                            <div class="rounded bg-purple-50 p-3">Detected fraud (TP)<strong class="block text-lg">${formatNumber(matrix.true_positive, 0)}</strong></div>
+                        </div>
+                    `;
+                    details.appendChild(panel);
+                });
+            } catch (err) {
+                message.innerText = `Could not load model metrics: ${err.message}`;
+                message.classList.remove('hidden');
+            }
+        }
+
+        function renderClassBalance(prefix, balance) {
+            document.getElementById(`${prefix}-size`).innerText = `${formatNumber(balance.total, 0)} transactions`;
+            const ratio = balance.imbalance_ratio
+                ? ` · ${formatNumber(balance.imbalance_ratio, 2)}:1 imbalance`
+                : '';
+            document.getElementById(`${prefix}-balance`).innerText =
+                `${formatNumber(balance.legitimate, 0)} legitimate (${formatNumber(balance.legitimate_percent, 2)}%) · ${formatNumber(balance.fraud, 0)} fraud (${formatNumber(balance.fraud_percent, 2)}%)${ratio}`;
+        }
+
+        async function fetchPreprocessingSummary() {
+            try {
+                const result = await requestJson('/api/v1/data/summary');
+                const metadata = result.dataset_metadata;
+                renderClassBalance('prep-train', metadata.train_class_distribution);
+                renderClassBalance('prep-test', metadata.test_class_distribution);
+
+                const rawBody = document.getElementById('raw-features-body');
+                rawBody.innerHTML = metadata.raw_fields.map(field => `
+                    <tr>
+                        <td class="px-5 py-3 font-mono text-xs">${escapeHtml(field)}</td>
+                        <td class="px-5 py-3">${escapeHtml(metadata.raw_example[field] ?? 'Sample unavailable')}</td>
+                    </tr>
+                `).join('');
+
+                const engineeredBody = document.getElementById('engineered-features-body');
+                engineeredBody.innerHTML = metadata.engineered_features.map(feature => `
+                    <tr>
+                        <td class="px-5 py-3 font-mono text-xs">${escapeHtml(feature.name)}</td>
+                        <td class="px-5 py-3 text-xs">${escapeHtml(feature.definition)}</td>
+                        <td class="px-5 py-3">${escapeHtml(metadata.engineered_example[feature.name] ?? 'Sample unavailable')}</td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                const message = document.getElementById('preprocessing-message');
+                message.innerText = `Could not load preprocessing details: ${err.message}`;
+                message.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

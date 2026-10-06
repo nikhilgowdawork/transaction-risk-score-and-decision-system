@@ -10,6 +10,8 @@ The active implementation currently includes:
 - A benchmark training workflow for baseline XGBoost, SMOTE + XGBoost, and KMeans-SMOTE + XGBoost.
 - A SHAP-based explainability module for transaction-level feature attribution.
 - A River-based online learning simulation for stream evaluation and concept-drift monitoring.
+- A FastAPI dashboard for transaction simulation, persistent history, model metrics, and live River predictions.
+- A preprocessing view showing raw-to-engineered features and train/test fraud-class imbalance.
 - Supporting configuration and dependency setup for the ML workflow.
 
 ## Repository structure
@@ -25,7 +27,7 @@ transaction-risk-score-and-decision-system/
 │   ├── __init__.py
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py          # empty placeholder
+│   │   ├── main.py          # FastAPI routes and streaming websocket
 │   │   └── schemas.py       # Pydantic request/response models
 │   ├── data/
 │   │   ├── transactiondata.csv
@@ -38,6 +40,7 @@ transaction-risk-score-and-decision-system/
 │   └── src/
 │       ├── __init__.py
 │       ├── data_pipeline.py
+│       ├── database.py
 │       ├── explainability.py
 │       ├── model_trainer.py
 │       └── streaming_simulation.py
@@ -48,14 +51,23 @@ transaction-risk-score-and-decision-system/
 
 ## Current project state
 
-This repository is best understood as a model-development and analysis project rather than a complete deployed application.
+The repository includes both the model-development workflow and a local FastAPI dashboard.
 
-Important implementation notes:
+The dashboard is served from `frontend/index.html` and backed by `backend/app/main.py`. It provides:
 
-- `backend/app/main.py` exists but is currently empty and does not define a FastAPI app.
-- `backend/app/schemas.py` defines the request and response schema objects, but the API route layer is not connected yet.
-- `frontend/index.html` is present but not connected to the model pipeline.
-- The actual machine-learning logic lives in the backend source files under `backend/src/` and the trained model checkpoints under `backend/models/`.
+- Persistent totals, decision counts, average risk, transaction history, and a risk-score chart.
+- Single-sample simulation and manual transaction analysis with SHAP and optional Gemini audit text.
+- A River predict-then-learn stream with live websocket updates and prediction checkpoints.
+- Side-by-side holdout metrics for all three saved XGBoost models, including confusion matrices, plus preprocessing/class-imbalance views.
+- A confirmed reset action that clears saved transactions and stream progress.
+
+Run the dashboard from the repository root:
+
+```powershell
+uvicorn backend.app.main:app --reload
+```
+
+Open `http://127.0.0.1:8000`. The dashboard requires the trained model and processed `backend/data/train.csv` and `backend/data/test.csv` files. Gemini audit explanations additionally require `GEMINI_API_KEY`; transaction scoring and SHAP explanations do not.
 
 ## Data pipeline
 

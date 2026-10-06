@@ -1,5 +1,6 @@
 import os
 import textwrap
+import time
 import joblib
 import pandas as pd
 import shap
@@ -132,7 +133,7 @@ class FraudXAIExplainer:
 # GEMINI EXPLANATION
 # ================================================================
 
-    def generate_llm_explanation(
+    def generate_llm_explanation(self,
         risk_score: float,
         decision: str,
         input_df: pd.DataFrame,
@@ -299,19 +300,44 @@ class FraudXAIExplainer:
                 api_key=api_key
             )
 
-            response = client.models.generate_content(
+            for attempt in range(3):
+                try:
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.1,
+                            max_output_tokens=500
+                        )
+                    )
+                    break
+                except Exception as error:
+                    is_service_unavailable = (
+                        getattr(error, "code", None) == 503
+                        or getattr(error, "status", None) == 503
+                        or "503 UNAVAILABLE" in str(error)
+                    )
+                    if not is_service_unavailable or attempt == 2:
+                        raise
+                    time.sleep(2 ** attempt)
 
-                model="gemini-3.6-flash",
-
-                contents=prompt,
-
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    max_output_tokens=500
+            audit_text = response.text
+            if not audit_text or not audit_text.strip():
+                finish_reasons = [
+                    str(getattr(candidate, "finish_reason", "unknown"))
+                    for candidate in (getattr(response, "candidates", None) or [])
+                ]
+                reason = (
+                    f" (finish reason: {', '.join(finish_reasons)})"
+                    if finish_reasons
+                    else ""
                 )
-            )
+                return (
+                    "⚠️ LLM Audit Generation Error: Gemini returned no audit text"
+                    f"{reason}."
+                )
 
-            return response.text.strip()
+            return audit_text.strip()
 
         except Exception as e:
 

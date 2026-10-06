@@ -94,6 +94,13 @@ class DatabaseManager:
             ).fetchone()
             return int(row["count"])
 
+    def get_average_risk_score(self) -> float:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT AVG(risk_score) AS average FROM transactions"
+            ).fetchone()
+            return round(float(row["average"] or 0.0), 4)
+
     def get_decision_counts(self) -> Dict[str, int]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -124,7 +131,7 @@ class DatabaseManager:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT transaction_data
+                SELECT id, transaction_data
                 FROM transactions
                 ORDER BY id DESC
                 LIMIT ?
@@ -135,11 +142,45 @@ class DatabaseManager:
         records = []
         for row in reversed(rows):
             try:
-                records.append(json.loads(row["transaction_data"]))
+                record = json.loads(row["transaction_data"])
+                record["transaction_index"] = int(row["id"])
+                records.append(record)
             except json.JSONDecodeError:
                 pass
 
         return records
+
+    def get_last_stream_index(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT state_value
+                FROM simulation_state
+                WHERE state_key = 'last_stream_index'
+                """
+            ).fetchone()
+            return int(row["state_value"]) if row else 0
+
+    def save_last_stream_index(self, index: int) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO simulation_state (state_key, state_value, updated_at)
+                VALUES ('last_stream_index', ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(state_key) DO UPDATE SET
+                    state_value = excluded.state_value,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (str(index),),
+            )
+
+    def clear_transactions(self) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM transactions")
+            connection.execute("DELETE FROM simulation_state")
+            connection.execute(
+                "DELETE FROM sqlite_sequence WHERE name = 'transactions'"
+            )
 
     def get_risk_score_graph(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         query = """
