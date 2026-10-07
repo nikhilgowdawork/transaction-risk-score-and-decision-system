@@ -12,6 +12,8 @@ class DatabaseManager:
     service and does not need a separate database server.
     """
 
+    STATIC_SOURCES = ("static", "analyze", "simulate-single")
+
     def __init__(self, database_path: Path):
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,16 +40,6 @@ class DatabaseManager:
                     predicted_label INTEGER,
                     transaction_data TEXT NOT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS simulation_state (
-                    state_key TEXT PRIMARY KEY,
-                    state_value TEXT NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -87,17 +79,31 @@ class DatabaseManager:
             )
             connection.commit()
 
-    def get_transaction_count(self) -> int:
+    def get_transaction_count(self, source: Optional[str] = None) -> int:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT COUNT(*) AS count FROM transactions"
-            ).fetchone()
+            if source is None:
+                row = connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM transactions
+                    WHERE source IN ('static', 'analyze', 'simulate-single')
+                    """
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT COUNT(*) AS count FROM transactions WHERE source = ?",
+                    (source,),
+                ).fetchone()
             return int(row["count"])
 
     def get_average_risk_score(self) -> float:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT AVG(risk_score) AS average FROM transactions"
+                """
+                SELECT AVG(risk_score) AS average
+                FROM transactions
+                WHERE source IN ('static', 'analyze', 'simulate-single')
+                """
             ).fetchone()
             return round(float(row["average"] or 0.0), 4)
 
@@ -107,6 +113,7 @@ class DatabaseManager:
                 """
                 SELECT decision, COUNT(*) AS count
                 FROM transactions
+                WHERE source IN ('static', 'analyze', 'simulate-single')
                 GROUP BY decision
                 """
             ).fetchall()
@@ -131,8 +138,15 @@ class DatabaseManager:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, transaction_data
-                FROM transactions
+                SELECT transaction_index, transaction_data
+                FROM (
+                    SELECT
+                        ROW_NUMBER() OVER (ORDER BY id) AS transaction_index,
+                        transaction_data,
+                        id
+                    FROM transactions
+                    WHERE source IN ('static', 'analyze', 'simulate-single')
+                )
                 ORDER BY id DESC
                 LIMIT ?
                 """,
@@ -143,53 +157,79 @@ class DatabaseManager:
         for row in reversed(rows):
             try:
                 record = json.loads(row["transaction_data"])
-                record["transaction_index"] = int(row["id"])
+                record["transaction_index"] = int(row["transaction_index"])
                 records.append(record)
             except json.JSONDecodeError:
                 pass
 
         return records
 
-    def get_last_stream_index(self) -> int:
+    def get_transaction_by_id(self, transaction_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT state_value
-                FROM simulation_state
-                WHERE state_key = 'last_stream_index'
-                """
+                SELECT transaction_data
+                FROM transactions
+                WHERE transaction_id = ?
+                  AND source IN ('static', 'analyze', 'simulate-single')
+                """,
+                (transaction_id,),
             ).fetchone()
-            return int(row["state_value"]) if row else 0
 
-    def save_last_stream_index(self, index: int) -> None:
+        if row is None:
+            return None
+        return json.loads(row["transaction_data"])
+
+    def update_transaction_analysis(
+        self,
+        transaction_id: str,
+        shap_contributions: List[Dict[str, Any]],
+        llm_audit: str,
+    ) -> None:
         with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT transaction_data
+                FROM transactions
+                WHERE transaction_id = ?
+                  AND source IN ('static', 'analyze', 'simulate-single')
+                """,
+                (transaction_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"Static transaction not found: {transaction_id}")
+
+            record = json.loads(row["transaction_data"])
+            record["shap_contributions"] = shap_contributions
+            record["llm_audit"] = llm_audit
             connection.execute(
                 """
-                INSERT INTO simulation_state (state_key, state_value, updated_at)
-                VALUES ('last_stream_index', ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(state_key) DO UPDATE SET
-                    state_value = excluded.state_value,
-                    updated_at = CURRENT_TIMESTAMP
+                UPDATE transactions
+                SET transaction_data = ?
+                WHERE transaction_id = ?
+                  AND source IN ('static', 'analyze', 'simulate-single')
                 """,
-                (str(index),),
+                (json.dumps(record, default=str), transaction_id),
             )
 
     def clear_transactions(self) -> None:
         with self._connect() as connection:
-            connection.execute("DELETE FROM transactions")
-            connection.execute("DELETE FROM simulation_state")
             connection.execute(
-                "DELETE FROM sqlite_sequence WHERE name = 'transactions'"
+                """
+                DELETE FROM transactions
+                WHERE source IN ('static', 'analyze', 'simulate-single')
+                """
             )
 
     def get_risk_score_graph(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         query = """
             SELECT
-                id,
+            ROW_NUMBER() OVER (ORDER BY id) AS transaction_index,
                 transaction_id,
                 risk_score,
                 decision
             FROM transactions
+            WHERE source IN ('static', 'analyze', 'simulate-single')
             ORDER BY id ASC
         """
 
@@ -198,11 +238,12 @@ class DatabaseManager:
         if limit is not None:
             query = """
                 SELECT
-                    id,
+                    ROW_NUMBER() OVER (ORDER BY id) AS transaction_index,
                     transaction_id,
                     risk_score,
                     decision
                 FROM transactions
+                WHERE source IN ('static', 'analyze', 'simulate-single')
                 ORDER BY id DESC
                 LIMIT ?
             """
@@ -216,7 +257,7 @@ class DatabaseManager:
 
         return [
             {
-                "index": int(row["id"]),
+                "index": int(row["transaction_index"]),
                 "transaction_id": row["transaction_id"],
                 "risk_score": round(float(row["risk_score"]), 4),
                 "decision": row["decision"],

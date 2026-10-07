@@ -1,9 +1,8 @@
 import os
 import textwrap
-import time
 import joblib
 import pandas as pd
-import shap
+import xgboost as xgb
 
 from google import genai
 from google.genai import types
@@ -72,22 +71,21 @@ class FraudXAIExplainer:
 
         self.model = joblib.load(model_path)
 
-        # SHAP TreeExplainer works with tree-based models
-        
-        self.explainer = shap.TreeExplainer(
-            self.model
-        )
-
     def explain_instance(
         self,
         instance_df: pd.DataFrame
     ):
         """
-        Generates the raw SHAP Explanation object
-        for a single transaction.
+        Generates native XGBoost TreeSHAP values for one transaction.
         """
 
-        return self.explainer(instance_df)
+        booster = self.model.get_booster()
+        contributions = booster.predict(
+            xgb.DMatrix(instance_df, feature_names=list(instance_df.columns)),
+            pred_contribs=True,
+            iteration_range=(0, booster.num_boosted_rounds()),
+        )
+        return contributions
 
     def get_feature_contributions(
         self,
@@ -97,13 +95,9 @@ class FraudXAIExplainer:
         Converts SHAP values into a readable DataFrame.
         """
 
-        # SHAP analyzes the transaction
-        shap_values = self.explainer(
-            instance_df
-        )
-
-        # Get SHAP values for the first transaction
-        vals = shap_values.values[0]
+        # Use XGBoost's native TreeSHAP implementation to avoid legacy
+        # ntree_limit calls from older SHAP/XGBoost compatibility paths.
+        vals = self.explain_instance(instance_df)[0][:-1]
 
         # Get feature names
         feature_names = instance_df.columns
@@ -297,29 +291,18 @@ class FraudXAIExplainer:
         try:
 
             client = genai.Client(
-                api_key=api_key
+                api_key=api_key,
+                http_options=types.HttpOptions(timeout=15_000),
             )
 
-            for attempt in range(3):
-                try:
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=0.1,
-                            max_output_tokens=500
-                        )
-                    )
-                    break
-                except Exception as error:
-                    is_service_unavailable = (
-                        getattr(error, "code", None) == 503
-                        or getattr(error, "status", None) == 503
-                        or "503 UNAVAILABLE" in str(error)
-                    )
-                    if not is_service_unavailable or attempt == 2:
-                        raise
-                    time.sleep(2 ** attempt)
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=500
+                )
+            )
 
             audit_text = response.text
             if not audit_text or not audit_text.strip():

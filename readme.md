@@ -8,9 +8,9 @@ The active implementation currently includes:
 
 - A preprocessing pipeline that filters PaySim transactions and engineers fraud-focused features.
 - A benchmark training workflow for baseline XGBoost, SMOTE + XGBoost, and KMeans-SMOTE + XGBoost.
-- A SHAP-based explainability module for transaction-level feature attribution.
+- Native XGBoost TreeSHAP explainability with optional Gemini audit text.
 - A River-based online learning simulation for stream evaluation and concept-drift monitoring.
-- A FastAPI dashboard for transaction simulation, persistent history, model metrics, and live River predictions.
+- A FastAPI dashboard for static-model transaction simulation, persistent history, model metrics, and live River predictions.
 - A preprocessing view showing raw-to-engineered features and train/test fraud-class imbalance.
 - Supporting configuration and dependency setup for the ML workflow.
 
@@ -57,9 +57,13 @@ The dashboard is served from `frontend/index.html` and backed by `backend/app/ma
 
 - Persistent totals, decision counts, average risk, transaction history, and a risk-score chart.
 - Single-sample simulation and manual transaction analysis with SHAP and optional Gemini audit text.
-- A River predict-then-learn stream with live websocket updates and prediction checkpoints.
+- A memory-only River predict-then-learn stream with live websocket updates and in-session checkpoints.
 - Side-by-side holdout metrics for all three saved XGBoost models, including confusion matrices, plus preprocessing/class-imbalance views.
-- A confirmed reset action that clears saved transactions and stream progress.
+- A simple static-model risk-score chart; transaction deep-analysis from the recent-transactions context menu; and a line-chart comparison of all three static models across evaluation metrics.
+- River predictions, progress, metrics, and learner state exist only in RAM and are discarded when the backend stops. They never enter SQLite or the static dashboard.
+- The obsolete `backend/data/river_stream.db` from the earlier implementation has been removed.
+- Analyze TX opens transaction details and explainability for a dashboard selection; manual-entry fields are hidden until requested.
+- A confirmed reset action that clears static dashboard transactions only; it does not change the current in-memory River session.
 
 Run the dashboard from the repository root:
 
@@ -67,7 +71,7 @@ Run the dashboard from the repository root:
 uvicorn backend.app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`. The dashboard requires the trained model and processed `backend/data/train.csv` and `backend/data/test.csv` files. Gemini audit explanations additionally require `GEMINI_API_KEY`; transaction scoring and SHAP explanations do not.
+Open `http://127.0.0.1:8000`. The dashboard requires the trained model and processed `backend/data/train.csv` and `backend/data/test.csv` files. Transaction scoring and SHAP details are served without waiting for Gemini; audit generation is an explicit optional request with a 15-second provider timeout. Gemini audit text additionally requires `GEMINI_API_KEY`. River session state resets whenever the backend process stops or restarts.
 
 ## Data pipeline
 
@@ -81,6 +85,7 @@ The class handles the following steps:
 - reads the source CSV with `pandas.read_csv()`
 - filters rows to `TRANSFER` and `CASH_OUT` transaction types
 - optionally samples the dataset to a configured size
+- uses fixed-seed stratified class quotas when sampling, preserving the fraud share as closely as integer class counts allow
 - sorts records by `step` to preserve chronology
 - engineers fraud-detection features
 - saves processed `train.csv` and `test.csv` files to the data directory
@@ -120,6 +125,10 @@ train_df, test_df = pipeline.load_processed_data()
 
 `prepare_pipeline()` is the main orchestration method and produces the processed training and testing splits.
 
+### Dataset size and sampling
+
+For the checked-in PaySim dataset, the raw file is 493,534,783 bytes and contains 6,362,620 rows. Filtering to `TRANSFER` and `CASH_OUT` retains 2,770,409 rows with 8,213 fraud cases (0.2965%). The current preprocessed files contain 200,000 rows and 561 fraud cases (0.2805%), a measured 0.0160 percentage-point difference from the eligible population. Those existing files predate the stratified sampler. When regenerated, the pipeline now assigns proportional fixed-seed `isFraud` quotas so the 200,000-row sample preserves the eligible fraud share up to whole-row rounding.
+
 ## Model training
 
 The benchmark model-training code lives in `backend/src/model_trainer.py` and uses the `FraudModelTrainer` class.
@@ -148,13 +157,13 @@ The script prints precision, recall, F1-score, and ROC-AUC for each model.
 
 ## Explainability
 
-The SHAP-based explainability logic is implemented in `backend/src/explainability.py`.
+The transaction explainability logic is implemented in `backend/src/explainability.py`.
 
 ### Features of the module
 
 The file includes:
 
-- `FraudXAIExplainer` for loading a trained XGBoost model and creating a SHAP `TreeExplainer`
+- `FraudXAIExplainer` for loading a trained XGBoost model and calculating native TreeSHAP contributions
 - `get_feature_contributions()` for ranking feature contribution values
 - `generate_llm_explanation()` to convert SHAP findings into a human-readable narrative using Gemini when `GEMINI_API_KEY` is configured
 
@@ -170,7 +179,7 @@ backend/models/xgb_kmeans_smote.pkl
 python -m backend.src.explainability
 ```
 
-This script loads processed test data, selects a fraud case, computes SHAP values, and prints a decision along with a summary when the Gemini API key is available.
+The dashboard calculates TreeSHAP values through XGBoost's native contribution predictor, avoiding the deprecated `ntree_limit` compatibility path. Deep analysis is requested separately from the fast scoring operation. Gemini audit generation is optional and may take longer than scoring.
 
 ## Streaming simulation
 

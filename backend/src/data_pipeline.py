@@ -51,16 +51,40 @@ class PaySimDataPipeline:
             df["type"].isin(["TRANSFER", "CASH_OUT"])
         ].reset_index(drop=True)
 
-        # Sample if dataset is larger than required
+        # Sample each class proportionally so rare fraud cases remain
+        # representative instead of relying on random-sample variation.
         if len(df) > self.sample_size:
             print(
-                f"Sampling {self.sample_size} records..."
+                f"Sampling {self.sample_size} records with fraud-stratified quotas..."
             )
 
-            df = df.sample(
-                n=self.sample_size,
-                random_state=self.random_state
-            )
+            if "isFraud" in df.columns:
+                class_counts = df["isFraud"].value_counts().sort_index()
+                exact_quotas = class_counts / len(df) * self.sample_size
+                quotas = exact_quotas.apply(int)
+                remaining = self.sample_size - int(quotas.sum())
+                remainder_order = (
+                    (exact_quotas - quotas)
+                    .sort_values(ascending=False)
+                    .index
+                )
+                for label in remainder_order[:remaining]:
+                    quotas.loc[label] += 1
+
+                sampled_classes = [
+                    df[df["isFraud"] == label].sample(
+                        n=int(quota),
+                        random_state=self.random_state,
+                    )
+                    for label, quota in quotas.items()
+                    if quota
+                ]
+                df = pd.concat(sampled_classes, ignore_index=True)
+            else:
+                df = df.sample(
+                    n=self.sample_size,
+                    random_state=self.random_state
+                )
 
         # Sort chronologically
         df = df.sort_values(

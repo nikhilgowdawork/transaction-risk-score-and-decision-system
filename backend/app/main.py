@@ -63,6 +63,7 @@ class SystemState:
         self.test_df: pd.DataFrame = pd.DataFrame()
         self.train_df: pd.DataFrame = pd.DataFrame()
         self.model_comparison: Optional[List[Dict[str, Any]]] = None
+        self.raw_dataset_metadata: Optional[Dict[str, Any]] = None
 
         # Runtime cache only. Permanent history is stored in SQLite.
         self.simulated_history: List[Dict[str, Any]] = []
@@ -72,6 +73,7 @@ class SystemState:
         self.online_f1 = metrics.F1()
         self.online_rocauc = metrics.ROCAUC()
         self.river_history: List[Dict[str, Any]] = []
+        self.river_processed_index: int = 0
 
         self.is_simulating: bool = False
         self.simulation_task: Optional[asyncio.Task] = None
@@ -154,8 +156,7 @@ def startup_event():
 
     state.pipeline = PaySimDataPipeline(raw_filepath="", sample_size=1000)
 
-    # Load only recent records into RAM.
-    # The complete history remains safely stored in SQLite.
+    # Static transaction history persists in SQLite; River state is memory-only.
     state.simulated_history = database.get_recent_transactions(limit=1000)
 
     print(f"Persistent transaction count: {database.get_transaction_count()}")
@@ -256,22 +257,86 @@ def get_data_summary() -> Dict[str, Any]:
     raw_example: Dict[str, Any] = {}
     engineered_example: Dict[str, Any] = {}
     raw_data_path = DATA_DIR / "transactiondata.csv"
-    if raw_data_path.exists():
-        raw_sample = pd.read_csv(raw_data_path, nrows=1000)
-        if "type" in raw_sample:
-            eligible_rows = raw_sample[raw_sample["type"].isin(["TRANSFER", "CASH_OUT"])]
-            if not eligible_rows.empty:
-                raw_row = eligible_rows.iloc[[0]]
-                raw_example = {
-                    key: value.item() if hasattr(value, "item") else value
-                    for key, value in raw_row.iloc[0][raw_fields].items()
-                }
-                transformed = state.pipeline.engineer_features(raw_row)
-                engineered_example = {
-                    key: value.item() if hasattr(value, "item") else value
-                    for key, value in transformed.iloc[0].items()
-                    if key in {feature["name"] for feature in engineered_features}
-                }
+    if state.raw_dataset_metadata is None and raw_data_path.exists():
+        total_rows = 0
+        total_fraud = 0
+        eligible_rows_count = 0
+        eligible_fraud = 0
+        for chunk in pd.read_csv(
+            raw_data_path,
+            usecols=["type", "isFraud"],
+            chunksize=250_000,
+        ):
+            total_rows += len(chunk)
+            total_fraud += int(chunk["isFraud"].sum())
+            eligible = chunk[chunk["type"].isin(["TRANSFER", "CASH_OUT"])]
+            eligible_rows_count += len(eligible)
+            eligible_fraud += int(eligible["isFraud"].sum())
+
+        example_columns = raw_fields + ["nameDest"]
+        for raw_sample in pd.read_csv(
+            raw_data_path,
+            usecols=lambda column: column in example_columns,
+            chunksize=10_000,
+        ):
+            eligible_sample = raw_sample[
+                raw_sample["type"].isin(["TRANSFER", "CASH_OUT"])
+            ]
+            if eligible_sample.empty:
+                continue
+
+            raw_row = eligible_sample.iloc[[0]]
+            raw_example = {
+                key: value.item() if hasattr(value, "item") else value
+                for key, value in raw_row.iloc[0][raw_fields].items()
+            }
+            transformed = state.pipeline.engineer_features(raw_row)
+            engineered_example = {
+                key: value.item() if hasattr(value, "item") else value
+                for key, value in transformed.iloc[0].items()
+                if key in {feature["name"] for feature in engineered_features}
+            }
+            break
+
+        sample_rows = len(state.train_df) + len(state.test_df)
+        sample_fraud = (
+            int(state.train_df["isFraud"].sum() + state.test_df["isFraud"].sum())
+            if "isFraud" in state.train_df and "isFraud" in state.test_df
+            else 0
+        )
+        state.raw_dataset_metadata = {
+            "file_bytes": raw_data_path.stat().st_size,
+            "raw_rows": total_rows,
+            "raw_fraud": total_fraud,
+            "eligible_rows": eligible_rows_count,
+            "eligible_fraud": eligible_fraud,
+            "eligible_fraud_percent": (
+                round(eligible_fraud * 100 / eligible_rows_count, 4)
+                if eligible_rows_count else 0
+            ),
+            "sample_rows": sample_rows,
+            "sample_fraud": sample_fraud,
+            "sample_fraud_percent": (
+                round(sample_fraud * 100 / sample_rows, 4)
+                if sample_rows else 0
+            ),
+            "sample_fraction_percent": (
+                round(sample_rows * 100 / eligible_rows_count, 2)
+                if eligible_rows_count else 0
+            ),
+            "sampling_method": (
+                "The preprocessing pipeline uses fixed-seed stratified sampling by "
+                "isFraud with proportional class quotas. The currently loaded "
+                "processed files are reported separately as the observed sample."
+            ),
+            "sample_fraud_share_difference_percentage_points": round(
+                abs(
+                    (sample_fraud * 100 / sample_rows if sample_rows else 0)
+                    - (eligible_fraud * 100 / eligible_rows_count if eligible_rows_count else 0)
+                ),
+                4,
+            ),
+        }
 
     return {
         "dataset_metadata": {
@@ -283,6 +348,7 @@ def get_data_summary() -> Dict[str, Any]:
             "engineered_example": engineered_example,
             "train_class_distribution": label_distribution(state.train_df),
             "test_class_distribution": label_distribution(state.test_df),
+            "raw_dataset": state.raw_dataset_metadata,
         },
     }
 
@@ -290,12 +356,29 @@ def get_data_summary() -> Dict[str, Any]:
 @app.get("/api/v1/models/performance")
 def get_model_performance() -> Dict[str, Any]:
     if state.model_comparison is not None:
+        best_model = max(
+            state.model_comparison,
+            key=lambda model: (
+                model["f1_score"],
+                model["recall"],
+                -model["missed_fraud"],
+                -model["false_positives"],
+            ),
+        )
+        recommendation_reason = (
+            f"Highest F1 score ({best_model['f1_score']:.4f}) and "
+            f"{best_model['recall']:.1%} fraud recall; it missed "
+            f"{best_model['missed_fraud']} fraud cases and generated "
+            f"{best_model['false_positives']} false positives at the 0.50 threshold."
+        )
         return {
             "available": True,
             "source": "All three saved XGBoost models evaluated on the same untouched test set.",
             "classification_threshold": 0.5,
             "test_transactions": len(state.test_df),
             "models": state.model_comparison,
+            "best_model": best_model["model_name"],
+            "recommendation_reason": recommendation_reason,
         }
 
     if state.test_df.empty or "isFraud" not in state.test_df:
@@ -368,12 +451,29 @@ def get_model_performance() -> Dict[str, Any]:
         })
 
     state.model_comparison = comparison
+    best_model = max(
+        comparison,
+        key=lambda model: (
+            model["f1_score"],
+            model["recall"],
+            -model["missed_fraud"],
+            -model["false_positives"],
+        ),
+    )
+    best_model["recommendation_reason"] = (
+        f"Highest F1 score ({best_model['f1_score']:.4f}) and "
+        f"{best_model['recall']:.1%} fraud recall; it missed "
+        f"{best_model['missed_fraud']} fraud cases and generated "
+        f"{best_model['false_positives']} false positives at the 0.50 threshold."
+    )
     return {
         "available": True,
         "source": "All three saved XGBoost models evaluated on the same untouched test set.",
         "classification_threshold": 0.5,
         "test_transactions": len(actual),
         "models": comparison,
+        "best_model": best_model["model_name"],
+        "recommendation_reason": best_model["recommendation_reason"],
     }
 
 
@@ -406,32 +506,110 @@ def analyze_transaction(payload: UnifiedTransactionRequest) -> Dict[str, Any]:
         else ("FLAG FOR REVIEW" if prob > 0.35 else "APPROVE")
     )
 
-    contributions = state.xai_engine.get_feature_contributions(input_data)
-
-    llm_audit = state.xai_engine.generate_llm_explanation(
-        risk_score=prob,
-        decision=decision,
-        input_df=input_data,
-        shap_df=contributions,
-    )
-
     record = {
         "transaction_id": f"TX-{uuid.uuid4().hex[:8].upper()}",
         "input_raw": payload.dict(),
         "input_transformed": input_data.to_dict(orient="records")[0],
         "risk_score": prob,
         "decision": decision,
-        "shap_contributions": contributions.to_dict(orient="records"),
-        "llm_audit": llm_audit,
+        "shap_contributions": [],
+        "llm_audit": "",
     }
 
     # Runtime cache
     state.simulated_history.append(record)
 
     # Permanent storage
-    database.save_transaction(record, source="analyze")
+    database.save_transaction(record, source="static")
 
     return record
+
+
+@app.post("/api/v1/transaction/{transaction_id}/explain")
+def explain_transaction(transaction_id: str) -> Dict[str, Any]:
+    if not state.xai_engine:
+        raise HTTPException(status_code=503, detail="XAI model is not available.")
+
+    record = database.get_transaction_by_id(transaction_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Static transaction was not found.")
+
+    transformed = record.get("input_transformed")
+    if transformed:
+        input_data = pd.DataFrame([transformed])
+    else:
+        raw = record.get("input_raw", {})
+        raw_input_df = pd.DataFrame([{
+            "step": raw.get("step", 1),
+            "type": raw.get(
+                "type",
+                "TRANSFER" if raw.get("is_transfer", 1) == 1 else "CASH_OUT",
+            ),
+            "amount": raw.get("amount", 0.0),
+            "oldbalanceOrg": raw.get("oldbalanceOrg", 0.0),
+            "newbalanceOrig": raw.get("newbalanceOrig", 0.0),
+            "oldbalanceDest": raw.get("oldbalanceDest", 0.0),
+            "newbalanceDest": raw.get("newbalanceDest", 0.0),
+            "nameDest": "C123456789",
+        }])
+        input_data = state.pipeline.engineer_features(raw_input_df)
+
+    feature_names = getattr(state.xai_engine.model, "feature_names_in_", None)
+    if feature_names is not None:
+        for feature in feature_names:
+            if feature not in input_data:
+                input_data[feature] = 0
+        input_data = input_data[list(feature_names)]
+
+    contributions = state.xai_engine.get_feature_contributions(input_data)
+    contribution_records = contributions.to_dict(orient="records")
+    database.update_transaction_analysis(
+        transaction_id,
+        contribution_records,
+        record.get("llm_audit", ""),
+    )
+
+    return {
+        **record,
+        "shap_contributions": contribution_records,
+        "llm_audit": record.get("llm_audit", ""),
+    }
+
+
+@app.post("/api/v1/transaction/{transaction_id}/audit")
+def generate_transaction_audit(transaction_id: str) -> Dict[str, Any]:
+    if not state.xai_engine:
+        raise HTTPException(status_code=503, detail="XAI model is not available.")
+
+    record = database.get_transaction_by_id(transaction_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Static transaction was not found.")
+
+    input_data = pd.DataFrame([record.get("input_transformed", {})])
+    if input_data.empty or input_data.shape[1] == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Transaction features are unavailable for audit generation.",
+        )
+    contributions = pd.DataFrame(record.get("shap_contributions", []))
+    if contributions.empty:
+        raise HTTPException(
+            status_code=409,
+            detail="Generate SHAP details before requesting the audit.",
+        )
+
+    audit = state.xai_engine.generate_llm_explanation(
+        risk_score=float(record["risk_score"]),
+        decision=record["decision"],
+        input_df=input_data,
+        shap_df=contributions,
+    )
+    database.update_transaction_analysis(
+        transaction_id,
+        record["shap_contributions"],
+        audit,
+    )
+    return {"transaction_id": transaction_id, "llm_audit": audit}
 
 
 @app.post("/api/v1/transaction/simulate-single")
@@ -484,15 +662,6 @@ def simulate_single_transaction() -> Dict[str, Any]:
         else ("FLAG FOR REVIEW" if prob > 0.35 else "APPROVE")
     )
 
-    contributions = state.xai_engine.get_feature_contributions(input_data)
-
-    llm_audit = state.xai_engine.generate_llm_explanation(
-        risk_score=prob,
-        decision=decision,
-        input_df=input_data,
-        shap_df=contributions,
-    )
-
     record = {
         "transaction_id": f"SIM-{uuid.uuid4().hex[:8].upper()}",
         "ground_truth_label": actual_label,
@@ -508,14 +677,14 @@ def simulate_single_transaction() -> Dict[str, Any]:
         "input_transformed": input_data.to_dict(orient="records")[0],
         "risk_score": prob,
         "decision": decision,
-        "shap_contributions": contributions.to_dict(orient="records"),
-        "llm_audit": llm_audit,
+        "shap_contributions": [],
+        "llm_audit": "",
     }
 
     state.simulated_history.append(record)
 
     # NEW: persist simulated transaction permanently
-    database.save_transaction(record, source="simulate-single")
+    database.save_transaction(record, source="static")
 
     return record
 
@@ -528,8 +697,7 @@ async def run_river_simulation_loop():
     """
     Executes predict-then-learn online streaming.
 
-    The last processed dataset index is stored in SQLite so the simulation
-    can continue from the previous position after the backend restarts.
+    Stream predictions, model state, and progress are kept in memory only.
     """
 
     if state.test_df.empty:
@@ -539,7 +707,7 @@ async def run_river_simulation_loop():
     records = state.test_df.to_dict(orient="records")
     total_records = len(records)
 
-    idx = database.get_last_stream_index()
+    idx = state.river_processed_index
 
     if idx >= total_records:
         print("River simulation already reached the end of test.csv.")
@@ -579,12 +747,11 @@ async def run_river_simulation_loop():
             }
 
             state.river_history.append(record)
-            database.save_transaction(record, source="river")
-            database.save_last_stream_index(idx + 1)
+            state.river_processed_index = idx + 1
 
             await manager.broadcast({
                 "current_transaction": record,
-                "total_processed": database.get_transaction_count(),
+                "total_processed": len(state.river_history),
                 "stream_processed": idx + 1,
                 "total_dataset_size": total_records,
                 "checkpoint": (
@@ -625,7 +792,7 @@ async def start_simulation():
     if state.test_df.empty:
         raise HTTPException(status_code=400, detail="Test dataset is empty or missing.")
 
-    if database.get_last_stream_index() >= len(state.test_df):
+    if state.river_processed_index >= len(state.test_df):
         return {
             "status": "completed",
             "total_records": len(state.test_df),
@@ -659,24 +826,9 @@ async def stop_simulation():
 
 @app.delete("/api/v1/database")
 async def reset_database() -> Dict[str, Any]:
-    state.is_simulating = False
-    if state.simulation_task:
-        state.simulation_task.cancel()
-        try:
-            await state.simulation_task
-        except asyncio.CancelledError:
-            pass
-        state.simulation_task = None
-
     database.clear_transactions()
     state.simulated_history.clear()
-    state.river_history.clear()
-    state.online_accuracy = metrics.Accuracy()
-    state.online_f1 = metrics.F1()
-    state.online_rocauc = metrics.ROCAUC()
-    state.river_model = forest.ARFClassifier(n_models=10, seed=42)
 
-    await manager.broadcast({"stream_reset": True})
     return {
         "status": "database_reset",
         "total_evaluated_transactions": database.get_transaction_count(),
